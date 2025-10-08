@@ -1,0 +1,201 @@
+#ifndef SDC_PARSER_H
+#define SDC_PARSER_H
+
+#include <stdbool.h>
+
+// ============================================================================
+// PUBLIC DATA STRUCTURES
+// ============================================================================
+
+// Tag system
+typedef enum {
+    SDC_TAG_TYPE_SINGLE,
+    SDC_TAG_TYPE_KEYVALUE
+} TagType;
+
+typedef struct {
+    char* name;
+    TagType type;
+    char* color;
+    char** keys;      // NULL for single-type tags
+    int key_count;
+} TagDefinition;
+
+// Story entities
+typedef struct {
+    int id;
+    char* name;
+} Chapter;
+
+typedef struct {
+    char** characters;  // Array of character names
+    char** texts;       // Array of dialogue texts
+    int line_count;     // Number of lines in this dialogue
+} Dialogue;
+
+typedef struct {
+    char* code;  // User interprets this themselves
+} CodeAction;
+
+typedef struct {
+    int target_node;
+} GotoAction;
+
+typedef struct {
+    char* target;  // "group", etc.
+} ExitAction;
+
+typedef struct {
+    int target_group;
+} EnterAction;
+
+typedef enum {
+    SDC_ACTION_TYPE_CODE,
+    SDC_ACTION_TYPE_GOTO,
+    SDC_ACTION_TYPE_EXIT,
+    SDC_ACTION_TYPE_ENTER,
+    SDC_ACTION_TYPE_CHOICE
+} ActionType;
+
+// Forward declaration for recursive structure
+typedef struct ChoiceOption ChoiceOption;
+typedef struct Action Action;
+
+typedef struct {
+    ChoiceOption* options;
+    int option_count;
+} ChoiceAction;
+
+struct Action {
+    int number;
+    ActionType type;
+    union {
+        CodeAction code;
+        GotoAction goto_action;
+        ExitAction exit_action;
+        EnterAction enter_action;
+        ChoiceAction choice;
+    } data;
+};
+
+struct ChoiceOption {
+    char* text;
+    Action* actions;      // Timeline of actions within this choice
+    int action_count;
+};
+
+typedef enum {
+    SDC_TIMELINE_ITEM_ACTION,
+    SDC_TIMELINE_ITEM_DIALOGUE
+} TimelineItemType;
+
+typedef struct {
+    TimelineItemType type;
+    int number;  // The number (dialogue 1, action 2, etc.)
+    union {
+        Action action;
+        Dialogue dialogue;
+    } data;
+} TimelineItem;
+
+typedef struct {
+    int start_node;
+    int end_node;
+    
+    // Points mapping: node_id -> array of connected node_ids
+    int* point_keys;           // Array of source node IDs
+    int** point_values;        // Array of arrays (connected node IDs)
+    int* point_value_counts;   // Count for each array in point_values
+    int point_count;           // Number of point mappings
+} NodeGraph;
+
+typedef struct {
+    char* tag_name;
+    char* selected_key;  // NULL for single-type tags
+    char* value;         // Optional coordinate string, etc.
+} GroupTag;
+
+typedef struct {
+    int id;
+    int chapter_id;
+    char* name;
+    char* content;
+    
+    GroupTag* tags;
+    int tag_count;
+    
+    NodeGraph nodes;
+} Group;
+
+typedef struct {
+    int id;
+    char* title;
+    char* content;
+    
+    TimelineItem* timeline;
+    int timeline_count;
+} Node;
+
+typedef struct {
+    TagDefinition* tags;
+    int tag_count;
+    
+    Chapter* chapters;
+    int chapter_count;
+    
+    Group* groups;
+    int group_count;
+    
+    Node* nodes;
+    int node_count;
+} StoryData;
+
+// ============================================================================
+// PUBLIC API
+// ============================================================================
+
+/**
+ * Parse a .sdc file from disk
+ * Returns NULL on error
+ */
+StoryData* sdc_parse_file(const char* filename);
+
+/**
+ * Parse a .sdc format string from memory
+ * Returns NULL on error
+ */
+StoryData* sdc_parse_string(const char* source);
+
+/**
+ * Free all memory associated with a StoryData structure
+ */
+void sdc_free(StoryData* data);
+
+/**
+ * Get the last error message from parsing
+ * Returns NULL if no error
+ */
+const char* sdc_get_error(void);
+
+/**
+ * Lookup functions
+ */
+Chapter* sdc_get_chapter(StoryData* data, int id);
+Group* sdc_get_group(StoryData* data, int id);
+Node* sdc_get_node(StoryData* data, int id);
+TagDefinition* sdc_get_tag_definition(StoryData* data, const char* name);
+
+/**
+ * Get all tag definitions
+ * Returns pointer to internal array (do not free)
+ * Sets count to number of tags
+ */
+TagDefinition* sdc_get_tag_definitions(StoryData* data, int* count);
+
+/**
+ * Validate that all references (@node, @group) resolve correctly
+ * Returns true if valid, false otherwise
+ */
+bool sdc_validate_references(StoryData* data);
+
+#endif // SDC_PARSER_H
