@@ -1,17 +1,24 @@
 # This is a comment
+states [
+    "Idle",
+    "Poisoned",
+    "SleepDeprived",
+    "Ghastly"
+]
+
 global_vars [
     "PlayerName": {
         type: "string"
         default: ""
-    }
+    },
     "Items": {
         type: "int"
         default: 0
-    }
+    },
     "IsPlaying": {
         type: "bool"
         default: false
-    }
+    },
     "Money": {
         type: "float"
         default: 30.0
@@ -29,7 +36,7 @@ tags [
             "Endless Waterfall",
             "Cave of Mysteries",
         ]
-    }
+    },
     "Quest": {
         type: "key-value"
         color: "#e6f334ff"
@@ -37,7 +44,7 @@ tags [
             "Main Story",
             "Side"
         ]
-    }
+    },
     "Discovery": {
         type: "single"
         color: "#713"
@@ -138,6 +145,81 @@ node 1 {
                     }
                 }
             ]
+        }
+        action 4 {
+            type: "event"
+            data: {
+                type: "next-node"
+            }
+        }
+        action 5 {
+            type: "event"
+            data: {
+                type: "exit-current-node"
+            }
+        }
+        action 6 {
+            type: "event"
+            data: {
+                type: "exit-current-group"
+            }
+        }
+        action 7 {
+            type: "event"
+            data: {
+                type: "adjust-variable"
+                name: "Money"
+                increment: 5.6
+            }
+        }
+        action 8 {
+            type: "event"
+            data: {
+                type: "adjust-variable"
+                name: "Money"
+                increment: -5.6
+            }
+        }
+        action 9 {
+            type: "event"
+            data: {
+                type: "adjust-variable"
+                name: "PlayerName"
+                value: "New Player"
+            }
+        }
+        action 10 {
+            type: "event"
+            data: {
+                type: "adjust-variable"
+                name: "IsPlaying"
+                toggle: "toggle"
+            }
+        }
+        action 11 {
+            type: "event"
+            data: {
+                type: "add-state"
+                name: "Poisoned",
+                character: "Saniyah"
+            }
+        }
+        action 12 {
+            type: "event"
+            data: {
+                type: "remove-state"
+                name: "Poisoned",
+                character: "Saniyah"
+            }
+        }
+        action 13 {
+            type: "event"
+            data: {
+                type: "progress-story"
+                chapter: @chapter(2)
+                group: @group(2)
+                node: @node(6)
+            }
         }
     }
 }
