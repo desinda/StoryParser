@@ -341,7 +341,7 @@ static void scan_identifier(Lexer* lexer) {
 }
 
 static void scan_code_block(Lexer* lexer) {
-    advance(lexer);  // 
+    advance(lexer);  // <
     advance(lexer);  // !
     
     const char* code_start = lexer->current;
@@ -536,7 +536,7 @@ static bool parse_chapter(Parser* parser, Chapter* chapter);
 static bool parse_group(Parser* parser, Group* group);
 static bool parse_node(Parser* parser, Node* node);
 
-// Parse tags section
+// Parse tags section - FIXED VERSION
 static bool parse_tags(Parser* parser) {
     if (!expect(parser, TOKEN_TAGS, "Expected 'tags'")) return false;
     if (!expect(parser, TOKEN_LBRACKET, "Expected '[' after 'tags'")) return false;
@@ -548,16 +548,22 @@ static bool parse_tags(Parser* parser) {
         if (check(parser, TOKEN_STRING)) {
             count++;
             advance_parser(parser);
-            if (!expect(parser, TOKEN_COLON, "Expected ':' after tag name")) return false;
-            if (!expect(parser, TOKEN_LBRACE, "Expected '{' after ':'")) return false;
-            
-            // Skip to matching }
-            int brace_count = 1;
-            while (brace_count > 0 && !is_at_end_parser(parser)) {
-                if (check(parser, TOKEN_LBRACE)) brace_count++;
-                if (check(parser, TOKEN_RBRACE)) brace_count--;
+            // Just skip tokens during counting - don't validate
+            if (check(parser, TOKEN_COLON)) {
                 advance_parser(parser);
             }
+            if (check(parser, TOKEN_LBRACE)) {
+                // Skip to matching }
+                int brace_count = 1;
+                advance_parser(parser);
+                while (brace_count > 0 && !is_at_end_parser(parser)) {
+                    if (check(parser, TOKEN_LBRACE)) brace_count++;
+                    if (check(parser, TOKEN_RBRACE)) brace_count--;
+                    advance_parser(parser);
+                }
+            }
+        } else {
+            advance_parser(parser);  // Skip unknown tokens
         }
         if (check(parser, TOKEN_COMMA)) advance_parser(parser);
     }
@@ -574,6 +580,8 @@ static bool parse_tags(Parser* parser) {
             if (!parse_tag_definition(parser, &parser->story->tags[tag_index++])) {
                 return false;
             }
+        } else {
+            advance_parser(parser);  // Skip unknown tokens
         }
         if (check(parser, TOKEN_COMMA)) advance_parser(parser);
     }
@@ -676,6 +684,7 @@ static bool parse_chapter(Parser* parser, Chapter* chapter) {
     return true;
 }
 
+// FIXED VERSION
 static bool parse_group_tags(Parser* parser, Group* group) {
     if (!expect(parser, TOKEN_LBRACKET, "Expected '[' for tags")) return false;
     
@@ -699,6 +708,8 @@ static bool parse_group_tags(Parser* parser, Group* group) {
                     }
                 }
             }
+        } else {
+            advance_parser(parser);  // Skip unknown tokens during counting
         }
         if (check(parser, TOKEN_COMMA)) advance_parser(parser);
     }
@@ -731,6 +742,8 @@ static bool parse_group_tags(Parser* parser, Group* group) {
                                 Token* value = advance_parser(parser);
                                 group->tags[tag_index].value = strdup(value->value.string);
                             }
+                        } else {
+                            advance_parser(parser);  // Skip unknown tokens
                         }
                         if (check(parser, TOKEN_COMMA)) advance_parser(parser);
                     }
@@ -740,6 +753,8 @@ static bool parse_group_tags(Parser* parser, Group* group) {
             }
             
             tag_index++;
+        } else {
+            advance_parser(parser);  // Skip unknown tokens
         }
         if (check(parser, TOKEN_COMMA)) advance_parser(parser);
     }
@@ -1025,7 +1040,7 @@ static bool parse_timeline(Parser* parser, Node* node) {
             while (action_brace_depth > 0 && !is_at_end_parser(parser)) {
                 if (match(parser, TOKEN_TYPE)) {
                     if (!expect(parser, TOKEN_COLON, "Expected ':' after 'type'")) return false;
-                    Token* type_token = peek(parser);
+                    Token* type_token = peek_parser(parser);
                     
                     if (type_token->type == TOKEN_STRING) {
                         advance_parser(parser);

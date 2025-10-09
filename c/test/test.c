@@ -105,17 +105,28 @@ int main(int argc, char** argv) {
         return 1;
     }
     
-    printf("Parsing file: %s\n\n", argv[1]);
+    printf("Parsing file: %s\n", argv[1]);
+    fflush(stdout);
     
     StoryData* data = sdc_parse_file(argv[1]);
     
+    printf("Returned from sdc_parse_file\n");
+    fflush(stdout);
+    
     if (!data) {
-        printf("Error parsing file: %s\n", sdc_get_error());
+        const char* error = sdc_get_error();
+        printf("Error parsing file: %s\n", error ? error : "Unknown error (NULL)");
+        fflush(stdout);
         return 1;
     }
     
-    printf("Parse successful!\n\n");
-    
+    printf("Parse successful!\n");
+    printf("Tags: %d\n", data->tag_count);
+    printf("Chapters: %d\n", data->chapter_count);
+    printf("Groups: %d\n", data->group_count);
+    printf("Nodes: %d\n", data->node_count);
+    fflush(stdout);
+
     print_tag_definitions(data);
     print_chapters(data);
     print_groups(data);
