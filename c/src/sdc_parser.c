@@ -19,6 +19,7 @@ typedef enum {
     TOKEN_FALSE,
     
     // Keywords
+    TOKEN_STATES,
     TOKEN_GLOBAL_VARS,
     TOKEN_DEFAULT,
     TOKEN_TITLE,
@@ -44,6 +45,12 @@ typedef enum {
     TOKEN_START,
     TOKEN_END,
     TOKEN_POINTS,
+    TOKEN_DATA,
+    TOKEN_INCREMENT,
+    TOKEN_VALUE,
+    TOKEN_TOGGLE,
+    TOKEN_CHARACTER,
+    TOKEN_EVENT,
     
     // Symbols
     TOKEN_LBRACE,
@@ -245,6 +252,13 @@ static void scan_string(Lexer* lexer) {
 
 static void scan_number(Lexer* lexer) {
     bool is_float = false;
+    bool is_negative = false;
+    
+    // Handle negative sign
+    if (peek(lexer) == '-') {
+        is_negative = true;
+        advance(lexer);
+    }
     
     while (is_digit(peek(lexer))) {
         advance(lexer);
@@ -309,13 +323,18 @@ static TokenType identifier_type(Lexer* lexer) {
             }
             if (length == 6) return check_keyword(start, 6, "choice", TOKEN_CHOICE);
             if (length == 5) return check_keyword(start, 5, "color", TOKEN_COLOR);
+            if (length == 9) return check_keyword(start, 9, "character", TOKEN_CHARACTER);
             break;
         case 'd':
             if (length == 8) return check_keyword(start, 8, "dialogue", TOKEN_DIALOGUE);
             if (length == 7) return check_keyword(start, 7, "default", TOKEN_DEFAULT);
+            if (length == 4) return check_keyword(start, 4, "data", TOKEN_DATA);
             break;
         case 'e':
-            if (length == 5) return check_keyword(start, 5, "enter", TOKEN_ENTER);
+            if (length == 5) {
+                if (memcmp(start, "enter", 5) == 0) return TOKEN_ENTER;
+                if (memcmp(start, "event", 5) == 0) return TOKEN_EVENT;
+            }
             if (length == 4) return check_keyword(start, 4, "exit", TOKEN_EXIT);
             if (length == 3) return check_keyword(start, 3, "end", TOKEN_END);
             break;
@@ -326,6 +345,9 @@ static TokenType identifier_type(Lexer* lexer) {
             if (length == 11) return check_keyword(start, 11, "global_vars", TOKEN_GLOBAL_VARS);
             if (length == 5) return check_keyword(start, 5, "group", TOKEN_GROUP);
             if (length == 4) return check_keyword(start, 4, "goto", TOKEN_GOTO);
+            break;
+        case 'i':
+            if (length == 9) return check_keyword(start, 9, "increment", TOKEN_INCREMENT);
             break;
         case 'k':
             if (length == 4) return check_keyword(start, 4, "keys", TOKEN_KEYS);
@@ -341,6 +363,7 @@ static TokenType identifier_type(Lexer* lexer) {
             if (length == 6) return check_keyword(start, 6, "points", TOKEN_POINTS);
             break;
         case 's':
+            if (length == 6) return check_keyword(start, 6, "states", TOKEN_STATES);
             if (length == 5) return check_keyword(start, 5, "start", TOKEN_START);
             break;
         case 't':
@@ -353,7 +376,11 @@ static TokenType identifier_type(Lexer* lexer) {
             if (length == 5) {
                 if (memcmp(start, "title", 5) == 0) return TOKEN_TITLE;
             }
+            if (length == 6) return check_keyword(start, 6, "toggle", TOKEN_TOGGLE);
             if (length == 8) return check_keyword(start, 8, "timeline", TOKEN_TIMELINE);
+            break;
+        case 'v':
+            if (length == 5) return check_keyword(start, 5, "value", TOKEN_VALUE);
             break;
     }
     
@@ -361,7 +388,7 @@ static TokenType identifier_type(Lexer* lexer) {
 }
 
 static void scan_identifier(Lexer* lexer) {
-    while (is_alpha(peek(lexer)) || is_digit(peek(lexer))) {
+    while (is_alpha(peek(lexer)) || is_digit(peek(lexer)) || peek(lexer) == '-') {
         advance(lexer);
     }
     
@@ -480,6 +507,18 @@ static void lexer_scan_tokens(Lexer* lexer) {
                 scan_string(lexer);
                 break;
             
+            case '-':
+                if (is_digit(peek(lexer))) {
+                    lexer->current--;
+                    lexer->column--;
+                    scan_number(lexer);
+                } else {
+                    lexer->current--;
+                    lexer->column--;
+                    scan_identifier(lexer);
+                }
+                break;
+            
             default:
                 if (is_digit(c)) {
                     lexer->current--;
@@ -512,6 +551,8 @@ static Parser* parser_create(Token* tokens, int token_count) {
     parser->error_message = NULL;
     
     parser->story = (StoryData*)malloc(sizeof(StoryData));
+    parser->story->states = NULL;
+    parser->story->state_count = 0;
     parser->story->global_vars = NULL;
     parser->story->global_var_count = 0;
     parser->story->tags = NULL;
@@ -586,11 +627,52 @@ static bool expect(Parser* parser, TokenType type, const char* message) {
 }
 
 // Forward declarations
+static bool parse_states(Parser* parser);
 static bool parse_global_vars(Parser* parser);
+static bool parse_tags(Parser* parser);
 static bool parse_tag_definition(Parser* parser, TagDefinition* tag);
 static bool parse_chapter(Parser* parser, Chapter* chapter);
 static bool parse_group(Parser* parser, Group* group);
 static bool parse_node(Parser* parser, Node* node);
+
+// Parse states section
+static bool parse_states(Parser* parser) {
+    if (!expect(parser, TOKEN_STATES, "Expected 'states'")) return false;
+    if (!expect(parser, TOKEN_LBRACKET, "Expected '[' after 'states'")) return false;
+    
+    // Count states first
+    int count = 0;
+    int saved_pos = parser->current;
+    while (!check(parser, TOKEN_RBRACKET) && !is_at_end_parser(parser)) {
+        if (check(parser, TOKEN_STRING)) {
+            count++;
+            advance_parser(parser);
+        } else {
+            advance_parser(parser);
+        }
+        if (check(parser, TOKEN_COMMA)) advance_parser(parser);
+    }
+    parser->current = saved_pos;
+    
+    // Allocate state array
+    parser->story->states = (State*)calloc(count, sizeof(State));
+    parser->story->state_count = count;
+    
+    // Parse states
+    int state_index = 0;
+    while (!check(parser, TOKEN_RBRACKET) && !is_at_end_parser(parser)) {
+        if (check(parser, TOKEN_STRING)) {
+            Token* state_token = advance_parser(parser);
+            parser->story->states[state_index++].name = strdup(state_token->value.string);
+        } else {
+            advance_parser(parser);
+        }
+        if (check(parser, TOKEN_COMMA)) advance_parser(parser);
+    }
+    
+    if (!expect(parser, TOKEN_RBRACKET, "Expected ']' after states")) return false;
+    return true;
+}
 
 // Parse global_vars section
 static bool parse_global_vars(Parser* parser) {
@@ -956,7 +1038,10 @@ static bool parse_node_graph(Parser* parser, NodeGraph* graph) {
                             }
                         }
                     }
+                } else {
+                    advance_parser(parser);
                 }
+                if (check(parser, TOKEN_COMMA)) advance_parser(parser);
             }
             parser->current = saved_pos;
             
@@ -999,7 +1084,10 @@ static bool parse_node_graph(Parser* parser, NodeGraph* graph) {
                         }
                     }
                     point_index++;
+                } else {
+                    advance_parser(parser);
                 }
+                if (check(parser, TOKEN_COMMA)) advance_parser(parser);
             }
             
             if (!expect(parser, TOKEN_RBRACE, "Expected '}' after points")) return false;
@@ -1204,13 +1292,150 @@ static bool parse_timeline(Parser* parser, Node* node) {
                             }
                             break;
                         } else if (strcmp(type_token->value.string, "event") == 0) {
-                            node->timeline[item_index].data.action.type = SDC_ACTION_TYPE_GOTO;
+                            node->timeline[item_index].data.action.type = SDC_ACTION_TYPE_EVENT;
+                            node->timeline[item_index].data.action.data.event.event_type = SDC_EVENT_TYPE_UNKNOWN;
                         } else if (strcmp(type_token->value.string, "choice") == 0) {
                             node->timeline[item_index].data.action.type = SDC_ACTION_TYPE_CHOICE;
                         }
                     } else {
                         advance_parser(parser);
                     }
+                } else if (match(parser, TOKEN_DATA)) {
+                    // Parse data object for events
+                    if (!expect(parser, TOKEN_COLON, "Expected ':' after 'data'")) return false;
+                    if (!expect(parser, TOKEN_LBRACE, "Expected '{' after 'data:'")) return false;
+                    
+                    EventActionData* event = &node->timeline[item_index].data.action.data.event;
+                    event->event_type = SDC_EVENT_TYPE_UNKNOWN;
+                    
+                    int data_brace_depth = 1;
+                    while (data_brace_depth > 0 && !is_at_end_parser(parser)) {
+                        if (match(parser, TOKEN_TYPE)) {
+                            if (!expect(parser, TOKEN_COLON, "Expected ':' after 'type'")) return false;
+                            Token* event_type = advance_parser(parser);
+                            
+                            if (event_type->type == TOKEN_STRING) {
+                                if (strcmp(event_type->value.string, "next-node") == 0) {
+                                    event->event_type = SDC_EVENT_TYPE_NEXT_NODE;
+                                } else if (strcmp(event_type->value.string, "exit-current-node") == 0) {
+                                    event->event_type = SDC_EVENT_TYPE_EXIT_CURRENT_NODE;
+                                } else if (strcmp(event_type->value.string, "exit-current-group") == 0) {
+                                    event->event_type = SDC_EVENT_TYPE_EXIT_CURRENT_GROUP;
+                                } else if (strcmp(event_type->value.string, "adjust-variable") == 0) {
+                                    event->event_type = SDC_EVENT_TYPE_ADJUST_VARIABLE;
+                                    event->data.adjust_variable.name = NULL;
+                                    event->data.adjust_variable.value = NULL;
+                                    event->data.adjust_variable.increment = 0.0;
+                                    event->data.adjust_variable.is_toggle = false;
+                                    event->data.adjust_variable.has_increment = false;
+                                    event->data.adjust_variable.has_value = false;
+                                } else if (strcmp(event_type->value.string, "add-state") == 0) {
+                                    event->event_type = SDC_EVENT_TYPE_ADD_STATE;
+                                    event->data.add_state.name = NULL;
+                                    event->data.add_state.character = NULL;
+                                } else if (strcmp(event_type->value.string, "remove-state") == 0) {
+                                    event->event_type = SDC_EVENT_TYPE_REMOVE_STATE;
+                                    event->data.remove_state.name = NULL;
+                                    event->data.remove_state.character = NULL;
+                                } else if (strcmp(event_type->value.string, "progress-story") == 0) {
+                                    event->event_type = SDC_EVENT_TYPE_PROGRESS_STORY;
+                                    event->data.progress_story.chapter_id = -1;
+                                    event->data.progress_story.group_id = -1;
+                                    event->data.progress_story.node_id = -1;
+                                }
+                            }
+                        } else if (match(parser, TOKEN_NAME)) {
+                            if (!expect(parser, TOKEN_COLON, "Expected ':' after 'name'")) return false;
+                            Token* name = advance_parser(parser);
+                            if (event->event_type == SDC_EVENT_TYPE_ADJUST_VARIABLE) {
+                                event->data.adjust_variable.name = strdup(name->value.string);
+                            } else if (event->event_type == SDC_EVENT_TYPE_ADD_STATE || 
+                                      event->event_type == SDC_EVENT_TYPE_REMOVE_STATE) {
+                                if (event->event_type == SDC_EVENT_TYPE_ADD_STATE) {
+                                    event->data.add_state.name = strdup(name->value.string);
+                                } else {
+                                    event->data.remove_state.name = strdup(name->value.string);
+                                }
+                            }
+                        } else if (match(parser, TOKEN_INCREMENT)) {
+                            if (!expect(parser, TOKEN_COLON, "Expected ':' after 'increment'")) return false;
+                            Token* inc = advance_parser(parser);
+                            if (event->event_type == SDC_EVENT_TYPE_ADJUST_VARIABLE) {
+                                if (inc->type == TOKEN_FLOAT) {
+                                    event->data.adjust_variable.increment = inc->value.float_number;
+                                } else if (inc->type == TOKEN_NUMBER) {
+                                    event->data.adjust_variable.increment = (double)inc->value.number;
+                                }
+                                event->data.adjust_variable.has_increment = true;
+                            }
+                        } else if (match(parser, TOKEN_VALUE)) {
+                            if (!expect(parser, TOKEN_COLON, "Expected ':' after 'value'")) return false;
+                            Token* val = advance_parser(parser);
+                            if (event->event_type == SDC_EVENT_TYPE_ADJUST_VARIABLE) {
+                                event->data.adjust_variable.value = strdup(val->value.string);
+                                event->data.adjust_variable.has_value = true;
+                            }
+                        } else if (match(parser, TOKEN_TOGGLE)) {
+                            if (!expect(parser, TOKEN_COLON, "Expected ':' after 'toggle'")) return false;
+                            Token* tog = advance_parser(parser);
+                            if (event->event_type == SDC_EVENT_TYPE_ADJUST_VARIABLE) {
+                                event->data.adjust_variable.is_toggle = 
+                                    (strcmp(tog->value.string, "toggle") == 0);
+                            }
+                        } else if (match(parser, TOKEN_CHARACTER)) {
+                            if (!expect(parser, TOKEN_COLON, "Expected ':' after 'character'")) return false;
+                            Token* chr = advance_parser(parser);
+                            if (event->event_type == SDC_EVENT_TYPE_ADD_STATE) {
+                                event->data.add_state.character = strdup(chr->value.string);
+                            } else if (event->event_type == SDC_EVENT_TYPE_REMOVE_STATE) {
+                                event->data.remove_state.character = strdup(chr->value.string);
+                            }
+                        } else if (match(parser, TOKEN_CHAPTER)) {
+                            if (!expect(parser, TOKEN_COLON, "Expected ':' after 'chapter'")) return false;
+                            if (!expect(parser, TOKEN_AT, "Expected '@' for chapter reference")) return false;
+                            Token* ref_type = advance_parser(parser);
+                            if (!expect(parser, TOKEN_LPAREN, "Expected '(' after reference type")) return false;
+                            Token* ref_id = advance_parser(parser);
+                            if (!expect(parser, TOKEN_RPAREN, "Expected ')' after reference id")) return false;
+                            
+                            if (event->event_type == SDC_EVENT_TYPE_PROGRESS_STORY) {
+                                event->data.progress_story.chapter_id = (int)ref_id->value.number;
+                            }
+                        } else if (match(parser, TOKEN_GROUP)) {
+                            if (!expect(parser, TOKEN_COLON, "Expected ':' after 'group'")) return false;
+                            if (!expect(parser, TOKEN_AT, "Expected '@' for group reference")) return false;
+                            Token* ref_type = advance_parser(parser);
+                            if (!expect(parser, TOKEN_LPAREN, "Expected '(' after reference type")) return false;
+                            Token* ref_id = advance_parser(parser);
+                            if (!expect(parser, TOKEN_RPAREN, "Expected ')' after reference id")) return false;
+                            
+                            if (event->event_type == SDC_EVENT_TYPE_PROGRESS_STORY) {
+                                event->data.progress_story.group_id = (int)ref_id->value.number;
+                            }
+                        } else if (match(parser, TOKEN_NODE)) {
+                            if (!expect(parser, TOKEN_COLON, "Expected ':' after 'node'")) return false;
+                            if (!expect(parser, TOKEN_AT, "Expected '@' for node reference")) return false;
+                            Token* ref_type = advance_parser(parser);
+                            if (!expect(parser, TOKEN_LPAREN, "Expected '(' after reference type")) return false;
+                            Token* ref_id = advance_parser(parser);
+                            if (!expect(parser, TOKEN_RPAREN, "Expected ')' after reference id")) return false;
+                            
+                            if (event->event_type == SDC_EVENT_TYPE_PROGRESS_STORY) {
+                                event->data.progress_story.node_id = (int)ref_id->value.number;
+                            }
+                        } else {
+                            if (check(parser, TOKEN_LBRACE)) data_brace_depth++;
+                            if (check(parser, TOKEN_RBRACE)) {
+                                data_brace_depth--;
+                                if (data_brace_depth == 0) break;
+                            }
+                            advance_parser(parser);
+                        }
+                        
+                        if (check(parser, TOKEN_COMMA)) advance_parser(parser);
+                    }
+                    
+                    if (!expect(parser, TOKEN_RBRACE, "Expected '}' after data")) return false;
                 } else if (match(parser, TOKEN_GOTO)) {
                     if (!expect(parser, TOKEN_COLON, "Expected ':' after 'goto'")) return false;
                     if (!expect(parser, TOKEN_AT, "Expected '@' for reference")) return false;
@@ -1303,7 +1528,9 @@ static bool parse_node(Parser* parser, Node* node) {
 
 static bool parse_story(Parser* parser) {
     while (!is_at_end_parser(parser)) {
-        if (check(parser, TOKEN_GLOBAL_VARS)) {
+        if (check(parser, TOKEN_STATES)) {
+            if (!parse_states(parser)) return false;
+        } else if (check(parser, TOKEN_GLOBAL_VARS)) {
             if (!parse_global_vars(parser)) return false;
         } else if (check(parser, TOKEN_TAGS)) {
             if (!parse_tags(parser)) return false;
@@ -1404,6 +1631,12 @@ StoryData* sdc_parse_file(const char* filename) {
 void sdc_free(StoryData* data) {
     if (!data) return;
     
+    // Free states
+    for (int i = 0; i < data->state_count; i++) {
+        free(data->states[i].name);
+    }
+    free(data->states);
+    
     // Free global variables
     for (int i = 0; i < data->global_var_count; i++) {
         free(data->global_vars[i].name);
@@ -1468,6 +1701,18 @@ void sdc_free(StoryData* data) {
                     free(a->data.code.code);
                 } else if (a->type == SDC_ACTION_TYPE_EXIT) {
                     free(a->data.exit_action.target);
+                } else if (a->type == SDC_ACTION_TYPE_EVENT) {
+                    EventActionData* e = &a->data.event;
+                    if (e->event_type == SDC_EVENT_TYPE_ADJUST_VARIABLE) {
+                        free(e->data.adjust_variable.name);
+                        free(e->data.adjust_variable.value);
+                    } else if (e->event_type == SDC_EVENT_TYPE_ADD_STATE) {
+                        free(e->data.add_state.name);
+                        free(e->data.add_state.character);
+                    } else if (e->event_type == SDC_EVENT_TYPE_REMOVE_STATE) {
+                        free(e->data.remove_state.name);
+                        free(e->data.remove_state.character);
+                    }
                 }
             }
         }
@@ -1535,6 +1780,11 @@ TagDefinition* sdc_get_tag_definitions(StoryData* data, int* count) {
 GlobalVariable* sdc_get_global_variables(StoryData* data, int* count) {
     if (count) *count = data->global_var_count;
     return data->global_vars;
+}
+
+State* sdc_get_states(StoryData* data, int* count) {
+    if (count) *count = data->state_count;
+    return data->states;
 }
 
 bool sdc_validate_references(StoryData* data) {

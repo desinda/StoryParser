@@ -1,5 +1,17 @@
 #include "../src/sdc_parser.h"
 #include <stdio.h>
+#include <string.h>
+
+void print_states(StoryData* data) {
+    printf("=== STATES ===\n");
+    int count;
+    State* states = sdc_get_states(data, &count);
+    
+    for (int i = 0; i < count; i++) {
+        printf("State: %s\n", states[i].name);
+    }
+    printf("\n");
+}
 
 void print_global_vars(StoryData* data) {
     printf("=== GLOBAL VARIABLES ===\n");
@@ -123,6 +135,60 @@ void print_nodes(StoryData* data) {
                     case SDC_ACTION_TYPE_CHOICE:
                         printf("CHOICE\n");
                         break;
+                    case SDC_ACTION_TYPE_EVENT: {
+                        EventActionData* e = &item->data.action.data.event;
+                        printf("EVENT - ");
+                        switch (e->event_type) {
+                            case SDC_EVENT_TYPE_NEXT_NODE:
+                                printf("next-node\n");
+                                break;
+                            case SDC_EVENT_TYPE_EXIT_CURRENT_NODE:
+                                printf("exit-current-node\n");
+                                break;
+                            case SDC_EVENT_TYPE_EXIT_CURRENT_GROUP:
+                                printf("exit-current-group\n");
+                                break;
+                            case SDC_EVENT_TYPE_ADJUST_VARIABLE:
+                                printf("adjust-variable\n");
+                                printf("        Variable: %s\n", e->data.adjust_variable.name);
+                                if (e->data.adjust_variable.has_increment) {
+                                    printf("        Increment: %.2f\n", e->data.adjust_variable.increment);
+                                }
+                                if (e->data.adjust_variable.has_value) {
+                                    printf("        Value: %s\n", e->data.adjust_variable.value);
+                                }
+                                if (e->data.adjust_variable.is_toggle) {
+                                    printf("        Toggle: true\n");
+                                }
+                                break;
+                            case SDC_EVENT_TYPE_ADD_STATE:
+                                printf("add-state\n");
+                                printf("        State: %s\n", e->data.add_state.name);
+                                printf("        Character: %s\n", e->data.add_state.character);
+                                break;
+                            case SDC_EVENT_TYPE_REMOVE_STATE:
+                                printf("remove-state\n");
+                                printf("        State: %s\n", e->data.remove_state.name);
+                                printf("        Character: %s\n", e->data.remove_state.character);
+                                break;
+                            case SDC_EVENT_TYPE_PROGRESS_STORY:
+                                printf("progress-story\n");
+                                if (e->data.progress_story.chapter_id != -1) {
+                                    printf("        Chapter: %d\n", e->data.progress_story.chapter_id);
+                                }
+                                if (e->data.progress_story.group_id != -1) {
+                                    printf("        Group: %d\n", e->data.progress_story.group_id);
+                                }
+                                if (e->data.progress_story.node_id != -1) {
+                                    printf("        Node: %d\n", e->data.progress_story.node_id);
+                                }
+                                break;
+                            default:
+                                printf("unknown\n");
+                                break;
+                        }
+                        break;
+                    }
                 }
             }
         }
@@ -147,6 +213,7 @@ int main(int argc, char** argv) {
     
     printf("Parse successful!\n\n");
     
+    print_states(data);
     print_global_vars(data);
     print_tag_definitions(data);
     print_chapters(data);

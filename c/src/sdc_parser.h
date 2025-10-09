@@ -7,6 +7,11 @@
 // PUBLIC DATA STRUCTURES
 // ============================================================================
 
+// State definition
+typedef struct {
+    char* name;
+} State;
+
 // Global variable types
 typedef enum {
     SDC_VAR_TYPE_STRING,
@@ -69,12 +74,75 @@ typedef struct {
     int target_group;
 } EnterAction;
 
+// New event action data types
+typedef struct {
+    char _reserved;
+} NextNodeEventData;
+
+typedef struct {
+    char _reserved;
+} ExitCurrentNodeEventData;
+
+typedef struct {
+    char _reserved;
+} ExitCurrentGroupEventData;
+
+typedef struct {
+    char* name;           // Variable name
+    double increment;     // For numeric adjustments
+    char* value;          // For string/bool assignments
+    bool is_toggle;       // For boolean toggle
+    bool has_increment;   // Whether increment is set
+    bool has_value;       // Whether value is set
+} AdjustVariableEventData;
+
+typedef struct {
+    char* name;           // State name
+    char* character;      // Character to add state to
+} AddStateEventData;
+
+typedef struct {
+    char* name;           // State name
+    char* character;      // Character to remove state from
+} RemoveStateEventData;
+
+typedef struct {
+    int chapter_id;       // Target chapter (-1 if not set)
+    int group_id;         // Target group (-1 if not set)
+    int node_id;          // Target node (-1 if not set)
+} ProgressStoryEventData;
+
+typedef enum {
+    SDC_EVENT_TYPE_NEXT_NODE,
+    SDC_EVENT_TYPE_EXIT_CURRENT_NODE,
+    SDC_EVENT_TYPE_EXIT_CURRENT_GROUP,
+    SDC_EVENT_TYPE_ADJUST_VARIABLE,
+    SDC_EVENT_TYPE_ADD_STATE,
+    SDC_EVENT_TYPE_REMOVE_STATE,
+    SDC_EVENT_TYPE_PROGRESS_STORY,
+    SDC_EVENT_TYPE_UNKNOWN
+} EventType;
+
+typedef struct {
+    EventType event_type;
+    union {
+        NextNodeEventData next_node;
+        ExitCurrentNodeEventData exit_current_node;
+        ExitCurrentGroupEventData exit_current_group;
+        AdjustVariableEventData adjust_variable;
+        AddStateEventData add_state;
+        RemoveStateEventData remove_state;
+        ProgressStoryEventData progress_story;
+    } data;
+} EventActionData;
+
 typedef enum {
     SDC_ACTION_TYPE_CODE,
     SDC_ACTION_TYPE_GOTO,
     SDC_ACTION_TYPE_EXIT,
     SDC_ACTION_TYPE_ENTER,
-    SDC_ACTION_TYPE_CHOICE
+    SDC_ACTION_TYPE_CHOICE,
+    SDC_ACTION_TYPE_EVENT
 } ActionType;
 
 // Forward declaration for recursive structure
@@ -95,6 +163,7 @@ struct Action {
         ExitAction exit_action;
         EnterAction enter_action;
         ChoiceAction choice;
+        EventActionData event;
     } data;
 };
 
@@ -157,6 +226,9 @@ typedef struct {
 } Node;
 
 typedef struct {
+    State* states;
+    int state_count;
+    
     GlobalVariable* global_vars;
     int global_var_count;
     
@@ -222,6 +294,13 @@ TagDefinition* sdc_get_tag_definitions(StoryData* data, int* count);
  * Sets count to number of variables
  */
 GlobalVariable* sdc_get_global_variables(StoryData* data, int* count);
+
+/**
+ * Get all states
+ * Returns pointer to internal array (do not free)
+ * Sets count to number of states
+ */
+State* sdc_get_states(StoryData* data, int* count);
 
 /**
  * Validate that all references (@node, @group) resolve correctly
