@@ -1,6 +1,37 @@
 #include "../src/sdc_parser.h"
 #include <stdio.h>
 
+void print_global_vars(StoryData* data) {
+    printf("=== GLOBAL VARIABLES ===\n");
+    int count;
+    GlobalVariable* vars = sdc_get_global_variables(data, &count);
+    
+    for (int i = 0; i < count; i++) {
+        printf("Variable: %s\n", vars[i].name);
+        printf("  Type: ");
+        
+        switch (vars[i].type) {
+            case SDC_VAR_TYPE_STRING:
+                printf("string\n");
+                printf("  Default: \"%s\"\n", vars[i].default_value.string_value);
+                break;
+            case SDC_VAR_TYPE_INT:
+                printf("int\n");
+                printf("  Default: %ld\n", vars[i].default_value.int_value);
+                break;
+            case SDC_VAR_TYPE_BOOL:
+                printf("bool\n");
+                printf("  Default: %s\n", vars[i].default_value.bool_value ? "true" : "false");
+                break;
+            case SDC_VAR_TYPE_FLOAT:
+                printf("float\n");
+                printf("  Default: %.2f\n", vars[i].default_value.float_value);
+                break;
+        }
+        printf("\n");
+    }
+}
+
 void print_tag_definitions(StoryData* data) {
     printf("=== TAG DEFINITIONS ===\n");
     int count;
@@ -105,28 +136,18 @@ int main(int argc, char** argv) {
         return 1;
     }
     
-    printf("Parsing file: %s\n", argv[1]);
-    fflush(stdout);
+    printf("Parsing file: %s\n\n", argv[1]);
     
     StoryData* data = sdc_parse_file(argv[1]);
     
-    printf("Returned from sdc_parse_file\n");
-    fflush(stdout);
-    
     if (!data) {
-        const char* error = sdc_get_error();
-        printf("Error parsing file: %s\n", error ? error : "Unknown error (NULL)");
-        fflush(stdout);
+        printf("Error parsing file: %s\n", sdc_get_error());
         return 1;
     }
     
-    printf("Parse successful!\n");
-    printf("Tags: %d\n", data->tag_count);
-    printf("Chapters: %d\n", data->chapter_count);
-    printf("Groups: %d\n", data->group_count);
-    printf("Nodes: %d\n", data->node_count);
-    fflush(stdout);
-
+    printf("Parse successful!\n\n");
+    
+    print_global_vars(data);
     print_tag_definitions(data);
     print_chapters(data);
     print_groups(data);

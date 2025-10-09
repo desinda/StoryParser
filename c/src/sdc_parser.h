@@ -7,6 +7,26 @@
 // PUBLIC DATA STRUCTURES
 // ============================================================================
 
+// Global variable types
+typedef enum {
+    SDC_VAR_TYPE_STRING,
+    SDC_VAR_TYPE_INT,
+    SDC_VAR_TYPE_BOOL,
+    SDC_VAR_TYPE_FLOAT
+} GlobalVarType;
+
+typedef struct {
+    char* name;
+    GlobalVarType type;
+    
+    union {
+        char* string_value;
+        long int_value;
+        bool bool_value;
+        double float_value;
+    } default_value;
+} GlobalVariable;
+
 // Tag system
 typedef enum {
     SDC_TAG_TYPE_SINGLE,
@@ -137,6 +157,9 @@ typedef struct {
 } Node;
 
 typedef struct {
+    GlobalVariable* global_vars;
+    int global_var_count;
+    
     TagDefinition* tags;
     int tag_count;
     
@@ -184,6 +207,7 @@ Chapter* sdc_get_chapter(StoryData* data, int id);
 Group* sdc_get_group(StoryData* data, int id);
 Node* sdc_get_node(StoryData* data, int id);
 TagDefinition* sdc_get_tag_definition(StoryData* data, const char* name);
+GlobalVariable* sdc_get_global_variable(StoryData* data, const char* name);
 
 /**
  * Get all tag definitions
@@ -191,6 +215,13 @@ TagDefinition* sdc_get_tag_definition(StoryData* data, const char* name);
  * Sets count to number of tags
  */
 TagDefinition* sdc_get_tag_definitions(StoryData* data, int* count);
+
+/**
+ * Get all global variables
+ * Returns pointer to internal array (do not free)
+ * Sets count to number of variables
+ */
+GlobalVariable* sdc_get_global_variables(StoryData* data, int* count);
 
 /**
  * Validate that all references (@node, @group) resolve correctly

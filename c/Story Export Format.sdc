@@ -1,4 +1,23 @@
 # This is a comment
+global_vars [
+    "PlayerName": {
+        type: "string"
+        default: ""
+    }
+    "Items": {
+        type: "int"
+        default: 0
+    }
+    "IsPlaying": {
+        type: "bool"
+        default: false
+    }
+    "Money": {
+        type: "float"
+        default: 30.0
+    }
+]
+
 tags [
     "Location": {
         type: "key-value"

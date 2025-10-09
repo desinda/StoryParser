@@ -13,9 +13,14 @@ typedef enum {
     TOKEN_IDENTIFIER,
     TOKEN_STRING,
     TOKEN_NUMBER,
+    TOKEN_FLOAT,
     TOKEN_CODE_BLOCK,
+    TOKEN_TRUE,
+    TOKEN_FALSE,
     
     // Keywords
+    TOKEN_GLOBAL_VARS,
+    TOKEN_DEFAULT,
     TOKEN_TITLE,
     TOKEN_TAGS,
     TOKEN_CHAPTER,
@@ -64,7 +69,9 @@ typedef struct {
     
     union {
         long number;
+        double float_number;
         char* string;
+        bool bool_value;
     } value;
 } Token;
 
@@ -237,12 +244,24 @@ static void scan_string(Lexer* lexer) {
 }
 
 static void scan_number(Lexer* lexer) {
+    bool is_float = false;
+    
     while (is_digit(peek(lexer))) {
         advance(lexer);
     }
     
+    // Check for decimal point
+    if (peek(lexer) == '.' && is_digit(peek_next(lexer))) {
+        is_float = true;
+        advance(lexer);  // Consume '.'
+        
+        while (is_digit(peek(lexer))) {
+            advance(lexer);
+        }
+    }
+    
     Token token;
-    token.type = TOKEN_NUMBER;
+    token.type = is_float ? TOKEN_FLOAT : TOKEN_NUMBER;
     token.line = lexer->line;
     token.column = lexer->column - (int)(lexer->current - lexer->start);
     
@@ -251,7 +270,11 @@ static void scan_number(Lexer* lexer) {
     memcpy(token.lexeme, lexer->start, length);
     token.lexeme[length] = '\0';
     
-    token.value.number = strtol(token.lexeme, NULL, 10);
+    if (is_float) {
+        token.value.float_number = strtod(token.lexeme, NULL);
+    } else {
+        token.value.number = strtol(token.lexeme, NULL, 10);
+    }
     
     if (lexer->token_count >= lexer->token_capacity) {
         lexer->token_capacity *= 2;
@@ -289,13 +312,18 @@ static TokenType identifier_type(Lexer* lexer) {
             break;
         case 'd':
             if (length == 8) return check_keyword(start, 8, "dialogue", TOKEN_DIALOGUE);
+            if (length == 7) return check_keyword(start, 7, "default", TOKEN_DEFAULT);
             break;
         case 'e':
             if (length == 5) return check_keyword(start, 5, "enter", TOKEN_ENTER);
             if (length == 4) return check_keyword(start, 4, "exit", TOKEN_EXIT);
             if (length == 3) return check_keyword(start, 3, "end", TOKEN_END);
             break;
+        case 'f':
+            if (length == 5) return check_keyword(start, 5, "false", TOKEN_FALSE);
+            break;
         case 'g':
+            if (length == 11) return check_keyword(start, 11, "global_vars", TOKEN_GLOBAL_VARS);
             if (length == 5) return check_keyword(start, 5, "group", TOKEN_GROUP);
             if (length == 4) return check_keyword(start, 4, "goto", TOKEN_GOTO);
             break;
@@ -320,6 +348,7 @@ static TokenType identifier_type(Lexer* lexer) {
                 if (memcmp(start, "tags", 4) == 0) return TOKEN_TAGS;
                 if (memcmp(start, "type", 4) == 0) return TOKEN_TYPE;
                 if (memcmp(start, "text", 4) == 0) return TOKEN_TEXT;
+                if (memcmp(start, "true", 4) == 0) return TOKEN_TRUE;
             }
             if (length == 5) {
                 if (memcmp(start, "title", 5) == 0) return TOKEN_TITLE;
@@ -337,7 +366,31 @@ static void scan_identifier(Lexer* lexer) {
     }
     
     TokenType type = identifier_type(lexer);
-    add_token(lexer, type);
+    
+    // For TRUE and FALSE, set the bool value
+    if (type == TOKEN_TRUE || type == TOKEN_FALSE) {
+        if (lexer->token_count >= lexer->token_capacity) {
+            lexer->token_capacity *= 2;
+            lexer->tokens = (Token*)realloc(lexer->tokens, 
+                                           sizeof(Token) * lexer->token_capacity);
+        }
+        
+        Token token;
+        token.type = type;
+        token.line = lexer->line;
+        token.column = lexer->column - (int)(lexer->current - lexer->start);
+        
+        int length = (int)(lexer->current - lexer->start);
+        token.lexeme = (char*)malloc(length + 1);
+        memcpy(token.lexeme, lexer->start, length);
+        token.lexeme[length] = '\0';
+        
+        token.value.bool_value = (type == TOKEN_TRUE);
+        
+        lexer->tokens[lexer->token_count++] = token;
+    } else {
+        add_token(lexer, type);
+    }
 }
 
 static void scan_code_block(Lexer* lexer) {
@@ -459,6 +512,8 @@ static Parser* parser_create(Token* tokens, int token_count) {
     parser->error_message = NULL;
     
     parser->story = (StoryData*)malloc(sizeof(StoryData));
+    parser->story->global_vars = NULL;
+    parser->story->global_var_count = 0;
     parser->story->tags = NULL;
     parser->story->tag_count = 0;
     parser->story->chapters = NULL;
@@ -531,12 +586,114 @@ static bool expect(Parser* parser, TokenType type, const char* message) {
 }
 
 // Forward declarations
+static bool parse_global_vars(Parser* parser);
 static bool parse_tag_definition(Parser* parser, TagDefinition* tag);
 static bool parse_chapter(Parser* parser, Chapter* chapter);
 static bool parse_group(Parser* parser, Group* group);
 static bool parse_node(Parser* parser, Node* node);
 
-// Parse tags section - FIXED VERSION
+// Parse global_vars section
+static bool parse_global_vars(Parser* parser) {
+    if (!expect(parser, TOKEN_GLOBAL_VARS, "Expected 'global_vars'")) return false;
+    if (!expect(parser, TOKEN_LBRACKET, "Expected '[' after 'global_vars'")) return false;
+    
+    // Count variables first
+    int count = 0;
+    int saved_pos = parser->current;
+    while (!check(parser, TOKEN_RBRACKET) && !is_at_end_parser(parser)) {
+        if (check(parser, TOKEN_STRING)) {
+            count++;
+            advance_parser(parser);
+            if (check(parser, TOKEN_COLON)) {
+                advance_parser(parser);
+            }
+            if (check(parser, TOKEN_LBRACE)) {
+                int brace_count = 1;
+                advance_parser(parser);
+                while (brace_count > 0 && !is_at_end_parser(parser)) {
+                    if (check(parser, TOKEN_LBRACE)) brace_count++;
+                    if (check(parser, TOKEN_RBRACE)) brace_count--;
+                    advance_parser(parser);
+                }
+            }
+        } else {
+            advance_parser(parser);
+        }
+        if (check(parser, TOKEN_COMMA)) advance_parser(parser);
+    }
+    parser->current = saved_pos;
+    
+    // Allocate variable array
+    parser->story->global_vars = (GlobalVariable*)calloc(count, sizeof(GlobalVariable));
+    parser->story->global_var_count = count;
+    
+    // Parse variables
+    int var_index = 0;
+    while (!check(parser, TOKEN_RBRACKET) && !is_at_end_parser(parser)) {
+        if (check(parser, TOKEN_STRING)) {
+            Token* name_token = advance_parser(parser);
+            GlobalVariable* var = &parser->story->global_vars[var_index++];
+            var->name = strdup(name_token->value.string);
+            
+            if (!expect(parser, TOKEN_COLON, "Expected ':' after variable name")) return false;
+            if (!expect(parser, TOKEN_LBRACE, "Expected '{' after ':'")) return false;
+            
+            // Parse variable properties
+            while (!check(parser, TOKEN_RBRACE) && !is_at_end_parser(parser)) {
+                if (match(parser, TOKEN_TYPE)) {
+                    if (!expect(parser, TOKEN_COLON, "Expected ':' after 'type'")) return false;
+                    Token* type_token = advance_parser(parser);
+                    
+                    if (strcmp(type_token->value.string, "string") == 0) {
+                        var->type = SDC_VAR_TYPE_STRING;
+                    } else if (strcmp(type_token->value.string, "int") == 0) {
+                        var->type = SDC_VAR_TYPE_INT;
+                    } else if (strcmp(type_token->value.string, "bool") == 0) {
+                        var->type = SDC_VAR_TYPE_BOOL;
+                    } else if (strcmp(type_token->value.string, "float") == 0) {
+                        var->type = SDC_VAR_TYPE_FLOAT;
+                    }
+                } else if (match(parser, TOKEN_DEFAULT)) {
+                    if (!expect(parser, TOKEN_COLON, "Expected ':' after 'default'")) return false;
+                    
+                    Token* default_token = peek_parser(parser);
+                    
+                    if (default_token->type == TOKEN_STRING) {
+                        advance_parser(parser);
+                        var->default_value.string_value = strdup(default_token->value.string);
+                    } else if (default_token->type == TOKEN_NUMBER) {
+                        advance_parser(parser);
+                        var->default_value.int_value = default_token->value.number;
+                    } else if (default_token->type == TOKEN_FLOAT) {
+                        advance_parser(parser);
+                        var->default_value.float_value = default_token->value.float_number;
+                    } else if (default_token->type == TOKEN_TRUE || default_token->type == TOKEN_FALSE) {
+                        advance_parser(parser);
+                        var->default_value.bool_value = default_token->value.bool_value;
+                    } else {
+                        set_error(parser, "Expected default value");
+                        return false;
+                    }
+                } else {
+                    advance_parser(parser);
+                }
+                
+                if (check(parser, TOKEN_COMMA)) advance_parser(parser);
+            }
+            
+            if (!expect(parser, TOKEN_RBRACE, "Expected '}' after variable definition")) return false;
+        } else {
+            advance_parser(parser);
+        }
+        
+        if (check(parser, TOKEN_COMMA)) advance_parser(parser);
+    }
+    
+    if (!expect(parser, TOKEN_RBRACKET, "Expected ']' after global_vars")) return false;
+    return true;
+}
+
+// Parse tags section
 static bool parse_tags(Parser* parser) {
     if (!expect(parser, TOKEN_TAGS, "Expected 'tags'")) return false;
     if (!expect(parser, TOKEN_LBRACKET, "Expected '[' after 'tags'")) return false;
@@ -548,12 +705,10 @@ static bool parse_tags(Parser* parser) {
         if (check(parser, TOKEN_STRING)) {
             count++;
             advance_parser(parser);
-            // Just skip tokens during counting - don't validate
             if (check(parser, TOKEN_COLON)) {
                 advance_parser(parser);
             }
             if (check(parser, TOKEN_LBRACE)) {
-                // Skip to matching }
                 int brace_count = 1;
                 advance_parser(parser);
                 while (brace_count > 0 && !is_at_end_parser(parser)) {
@@ -563,7 +718,7 @@ static bool parse_tags(Parser* parser) {
                 }
             }
         } else {
-            advance_parser(parser);  // Skip unknown tokens
+            advance_parser(parser);
         }
         if (check(parser, TOKEN_COMMA)) advance_parser(parser);
     }
@@ -581,7 +736,7 @@ static bool parse_tags(Parser* parser) {
                 return false;
             }
         } else {
-            advance_parser(parser);  // Skip unknown tokens
+            advance_parser(parser);
         }
         if (check(parser, TOKEN_COMMA)) advance_parser(parser);
     }
@@ -646,7 +801,7 @@ static bool parse_tag_definition(Parser* parser, TagDefinition* tag) {
             
             if (!expect(parser, TOKEN_RBRACKET, "Expected ']' after keys")) return false;
         } else {
-            advance_parser(parser);  // Skip unknown property
+            advance_parser(parser);
         }
         
         if (check(parser, TOKEN_COMMA)) advance_parser(parser);
@@ -684,7 +839,6 @@ static bool parse_chapter(Parser* parser, Chapter* chapter) {
     return true;
 }
 
-// FIXED VERSION
 static bool parse_group_tags(Parser* parser, Group* group) {
     if (!expect(parser, TOKEN_LBRACKET, "Expected '[' for tags")) return false;
     
@@ -695,7 +849,6 @@ static bool parse_group_tags(Parser* parser, Group* group) {
         if (check(parser, TOKEN_STRING)) {
             tag_count++;
             advance_parser(parser);
-            // Skip potential object
             if (check(parser, TOKEN_COLON)) {
                 advance_parser(parser);
                 if (check(parser, TOKEN_LBRACE)) {
@@ -709,7 +862,7 @@ static bool parse_group_tags(Parser* parser, Group* group) {
                 }
             }
         } else {
-            advance_parser(parser);  // Skip unknown tokens during counting
+            advance_parser(parser);
         }
         if (check(parser, TOKEN_COMMA)) advance_parser(parser);
     }
@@ -727,12 +880,10 @@ static bool parse_group_tags(Parser* parser, Group* group) {
             group->tags[tag_index].selected_key = NULL;
             group->tags[tag_index].value = NULL;
             
-            // Check if it's a key-value tag
             if (match(parser, TOKEN_COLON)) {
                 if (check(parser, TOKEN_LBRACE)) {
                     advance_parser(parser);
                     
-                    // Parse key-value pairs
                     while (!check(parser, TOKEN_RBRACE) && !is_at_end_parser(parser)) {
                         if (check(parser, TOKEN_STRING)) {
                             Token* key = advance_parser(parser);
@@ -743,7 +894,7 @@ static bool parse_group_tags(Parser* parser, Group* group) {
                                 group->tags[tag_index].value = strdup(value->value.string);
                             }
                         } else {
-                            advance_parser(parser);  // Skip unknown tokens
+                            advance_parser(parser);
                         }
                         if (check(parser, TOKEN_COMMA)) advance_parser(parser);
                     }
@@ -754,7 +905,7 @@ static bool parse_group_tags(Parser* parser, Group* group) {
             
             tag_index++;
         } else {
-            advance_parser(parser);  // Skip unknown tokens
+            advance_parser(parser);
         }
         if (check(parser, TOKEN_COMMA)) advance_parser(parser);
     }
@@ -911,17 +1062,15 @@ static bool parse_group(Parser* parser, Group* group) {
 static bool parse_timeline(Parser* parser, Node* node) {
     if (!expect(parser, TOKEN_LBRACE, "Expected '{' for timeline")) return false;
     
-    // Count timeline items more carefully
     int item_count = 0;
     int saved_pos = parser->current;
-    int brace_depth = 1;  // We've already consumed the opening brace
+    int brace_depth = 1;
     
     while (brace_depth > 0 && !is_at_end_parser(parser)) {
         if (check(parser, TOKEN_DIALOGUE)) {
             item_count++;
-            advance_parser(parser); // 'dialogue'
-            advance_parser(parser); // number
-            // Skip the dialogue block
+            advance_parser(parser);
+            advance_parser(parser);
             if (check(parser, TOKEN_LBRACE)) {
                 brace_depth++;
                 advance_parser(parser);
@@ -933,9 +1082,8 @@ static bool parse_timeline(Parser* parser, Node* node) {
             }
         } else if (check(parser, TOKEN_ACTION)) {
             item_count++;
-            advance_parser(parser); // 'action'
-            advance_parser(parser); // number
-            // Skip the action block
+            advance_parser(parser);
+            advance_parser(parser);
             if (check(parser, TOKEN_LBRACE)) {
                 brace_depth++;
                 advance_parser(parser);
@@ -957,7 +1105,6 @@ static bool parse_timeline(Parser* parser, Node* node) {
     node->timeline = (TimelineItem*)calloc(item_count, sizeof(TimelineItem));
     node->timeline_count = item_count;
     
-    // Now actually parse the items
     int item_index = 0;
     
     while (!check(parser, TOKEN_RBRACE) && !is_at_end_parser(parser) && item_index < item_count) {
@@ -968,17 +1115,16 @@ static bool parse_timeline(Parser* parser, Node* node) {
             node->timeline[item_index].type = SDC_TIMELINE_ITEM_DIALOGUE;
             node->timeline[item_index].number = (int)num->value.number;
             
-            // Count dialogue lines in this block
             int line_count = 0;
             int saved_pos2 = parser->current;
             while (!check(parser, TOKEN_RBRACE) && !is_at_end_parser(parser)) {
                 if (check(parser, TOKEN_IDENTIFIER)) {
                     line_count++;
-                    advance_parser(parser); // character
+                    advance_parser(parser);
                     if (check(parser, TOKEN_COLON)) {
-                        advance_parser(parser); // :
+                        advance_parser(parser);
                         if (check(parser, TOKEN_STRING)) {
-                            advance_parser(parser); // text
+                            advance_parser(parser);
                         }
                     }
                 } else {
@@ -987,24 +1133,20 @@ static bool parse_timeline(Parser* parser, Node* node) {
             }
             parser->current = saved_pos2;
             
-            // Allocate arrays for characters and texts
             node->timeline[item_index].data.dialogue.characters = 
                 (char**)malloc(sizeof(char*) * line_count);
             node->timeline[item_index].data.dialogue.texts = 
                 (char**)malloc(sizeof(char*) * line_count);
             node->timeline[item_index].data.dialogue.line_count = line_count;
             
-            // Parse each character:text pair
             int line_index = 0;
             while (!check(parser, TOKEN_RBRACE) && !is_at_end_parser(parser) && line_index < line_count) {
-                // Character name (should be IDENTIFIER)
                 Token* character = peek_parser(parser);
                 if (character->type == TOKEN_IDENTIFIER) {
                     node->timeline[item_index].data.dialogue.characters[line_index] = 
                         strdup(character->lexeme);
                     advance_parser(parser);
                 } else {
-                    // Skip unknown token
                     advance_parser(parser);
                     continue;
                 }
@@ -1033,9 +1175,8 @@ static bool parse_timeline(Parser* parser, Node* node) {
             
             node->timeline[item_index].type = SDC_TIMELINE_ITEM_ACTION;
             node->timeline[item_index].number = (int)num->value.number;
-            node->timeline[item_index].data.action.type = SDC_ACTION_TYPE_CODE; // Default
+            node->timeline[item_index].data.action.type = SDC_ACTION_TYPE_CODE;
             
-            // Parse action contents with proper brace tracking
             int action_brace_depth = 1;
             while (action_brace_depth > 0 && !is_at_end_parser(parser)) {
                 if (match(parser, TOKEN_TYPE)) {
@@ -1048,7 +1189,6 @@ static bool parse_timeline(Parser* parser, Node* node) {
                         if (strcmp(type_token->value.string, "code") == 0) {
                             node->timeline[item_index].data.action.type = SDC_ACTION_TYPE_CODE;
                             
-                            // Look for code block
                             while (action_brace_depth > 0 && !is_at_end_parser(parser)) {
                                 if (check(parser, TOKEN_CODE_BLOCK)) {
                                     Token* code_token = advance_parser(parser);
@@ -1163,7 +1303,9 @@ static bool parse_node(Parser* parser, Node* node) {
 
 static bool parse_story(Parser* parser) {
     while (!is_at_end_parser(parser)) {
-        if (check(parser, TOKEN_TAGS)) {
+        if (check(parser, TOKEN_GLOBAL_VARS)) {
+            if (!parse_global_vars(parser)) return false;
+        } else if (check(parser, TOKEN_TAGS)) {
             if (!parse_tags(parser)) return false;
         } else if (check(parser, TOKEN_CHAPTER)) {
             parser->story->chapter_count++;
@@ -1204,11 +1346,9 @@ static bool parse_story(Parser* parser) {
 StoryData* sdc_parse_string(const char* source) {
     if (!source) return NULL;
     
-    // Lexer phase
     Lexer* lexer = lexer_create(source);
     lexer_scan_tokens(lexer);
     
-    // Check for lexer errors
     for (int i = 0; i < lexer->token_count; i++) {
         if (lexer->tokens[i].type == TOKEN_ERROR) {
             if (last_error) free(last_error);
@@ -1218,7 +1358,6 @@ StoryData* sdc_parse_string(const char* source) {
         }
     }
     
-    // Parser phase
     Parser* parser = parser_create(lexer->tokens, lexer->token_count);
     
     if (!parse_story(parser)) {
@@ -1231,7 +1370,7 @@ StoryData* sdc_parse_string(const char* source) {
     }
     
     StoryData* result = parser->story;
-    parser->story = NULL;  // Prevent double-free
+    parser->story = NULL;
     
     parser_free(parser);
     lexer_free(lexer);
@@ -1264,6 +1403,15 @@ StoryData* sdc_parse_file(const char* filename) {
 
 void sdc_free(StoryData* data) {
     if (!data) return;
+    
+    // Free global variables
+    for (int i = 0; i < data->global_var_count; i++) {
+        free(data->global_vars[i].name);
+        if (data->global_vars[i].type == SDC_VAR_TYPE_STRING) {
+            free(data->global_vars[i].default_value.string_value);
+        }
+    }
+    free(data->global_vars);
     
     // Free tags
     for (int i = 0; i < data->tag_count; i++) {
@@ -1370,9 +1518,23 @@ TagDefinition* sdc_get_tag_definition(StoryData* data, const char* name) {
     return NULL;
 }
 
+GlobalVariable* sdc_get_global_variable(StoryData* data, const char* name) {
+    for (int i = 0; i < data->global_var_count; i++) {
+        if (strcmp(data->global_vars[i].name, name) == 0) {
+            return &data->global_vars[i];
+        }
+    }
+    return NULL;
+}
+
 TagDefinition* sdc_get_tag_definitions(StoryData* data, int* count) {
     if (count) *count = data->tag_count;
     return data->tags;
+}
+
+GlobalVariable* sdc_get_global_variables(StoryData* data, int* count) {
+    if (count) *count = data->global_var_count;
+    return data->global_vars;
 }
 
 bool sdc_validate_references(StoryData* data) {
