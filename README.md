@@ -1,2 +1,64 @@
 # StoryParser
 A story parsing library to read exported story files from Desinda Story Creator.
+
+## Installation
+This library is written in JavaScript and C.
+
+The C version is a portable C99 compatible single-header library file. Simply copy and place into your project files for use.
+
+## Usage
+
+### C
+You can parse directly from a string or from a file:
+
+```c
+StoryData* data = sdc_parse_file("path/to/file.sdc");
+// or...
+StoryData* data = sdc_parse_string("chapter 1 { name: \"Introduction\" }");
+```
+
+Data must be freed after use:
+
+```c
+sdc_free(data);
+```
+
+Please refer to the current API documentation for other functions:
+
+```c
+/**
+ * Get the last error message from parsing
+ * Returns NULL if no error
+ */
+const char* sdc_get_error(void);
+
+/**
+ * Lookup functions
+ */
+Chapter* sdc_get_chapter(StoryData* data, int id);
+Group* sdc_get_group(StoryData* data, int id);
+Node* sdc_get_node(StoryData* data, int id);
+TagDefinition* sdc_get_tag_definition(StoryData* data, const char* name);
+GlobalVariable* sdc_get_global_variable(StoryData* data, const char* name);
+
+/**
+ * Get all tag definitions
+ * Returns pointer to internal array (do not free)
+ * Sets count to number of tags
+ */
+TagDefinition* sdc_get_tag_definitions(StoryData* data, int* count);
+
+/**
+ * Get all global variables
+ * Returns pointer to internal array (do not free)
+ * Sets count to number of variables
+ */
+GlobalVariable* sdc_get_global_variables(StoryData* data, int* count);
+
+/**
+ * Get all states
+ * Returns pointer to internal array (do not free)
+ * Sets count to number of states
+ */
+State* sdc_get_states(StoryData* data, int* count);
+```
