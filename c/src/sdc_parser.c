@@ -331,9 +331,11 @@ static TokenType identifier_type(Lexer* lexer) {
     
     switch (start[0]) {
         case 'a':
-            if (length == 6) return check_keyword(start, 6, "action", TOKEN_ACTION);
-            if (length == 6) return check_keyword(start, 6, "amount", TOKEN_AMOUNT);
-            if (length == 6) return check_keyword(start, 6, "append", TOKEN_APPEND);
+            if (length == 6) {
+                if (memcmp(start, "action", 6) == 0) return TOKEN_ACTION;
+                if (memcmp(start, "amount", 6) == 0) return TOKEN_AMOUNT;
+                if (memcmp(start, "append", 6) == 0) return TOKEN_APPEND;
+            }
             break;
         case 'b':
             if (length == 9) return check_keyword(start, 9, "biography", TOKEN_BIOGRAPHY);
@@ -2205,12 +2207,11 @@ static bool parse_story(Parser* parser) {
             if (!parse_node(parser, &parser->story->nodes[parser->story->node_count - 1])) {
                 return false;
             }
+        }
         else if (check(parser, TOKEN_LINKED_LISTS)) {
             if (!parse_linked_lists(parser)) return false;
         } else if (check(parser, TOKEN_CHARACTERS)) {
             if (!parse_characters(parser)) return false;
-        }
-
         } else {
             advance_parser(parser);
         }

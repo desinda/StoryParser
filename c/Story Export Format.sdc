@@ -6,7 +6,7 @@ states [
     "Ghastly"
 ]
 
-global_vars [
+global-vars [
     "PlayerName": {
         type: "string"
         default: ""
