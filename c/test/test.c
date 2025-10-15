@@ -2,19 +2,22 @@
 #include <stdio.h>
 #include <string.h>
 
+void print_separator(const char* title) {
+    printf("\n=== %s ===\n", title);
+}
+
 void print_states(StoryData* data) {
-    printf("=== STATES ===\n");
+    print_separator("STATES");
     int count;
     State* states = sdc_get_states(data, &count);
     
     for (int i = 0; i < count; i++) {
         printf("State: %s\n", states[i].name);
     }
-    printf("\n");
 }
 
 void print_global_vars(StoryData* data) {
-    printf("=== GLOBAL VARIABLES ===\n");
+    print_separator("GLOBAL VARIABLES");
     int count;
     GlobalVariable* vars = sdc_get_global_variables(data, &count);
     
@@ -44,8 +47,97 @@ void print_global_vars(StoryData* data) {
     }
 }
 
+void print_linked_lists(StoryData* data) {
+    print_separator("LINKED LISTS");
+    int count;
+    LinkedListDefinition* lists = sdc_get_linked_lists(data, &count);
+    
+    for (int i = 0; i < count; i++) {
+        printf("Linked List: %s\n", lists[i].name);
+        printf("  Scope: %s\n", lists[i].scope);
+        printf("  Structure:\n");
+        
+        for (int j = 0; j < lists[i].field_count; j++) {
+            printf("    %s: %s\n", lists[i].field_names[j], lists[i].fields[j].type);
+        }
+        printf("\n");
+    }
+}
+
+void print_characters(StoryData* data) {
+    print_separator("CHARACTERS");
+    int count;
+    Character* characters = sdc_get_characters(data, &count);
+    
+    for (int i = 0; i < count; i++) {
+        printf("Character: %s\n", characters[i].name);
+        printf("  Biography: %s\n", characters[i].biography);
+        printf("  Description: %s\n", characters[i].description);
+        printf("  Linked List Data:\n");
+        
+        for (int j = 0; j < characters[i].linked_list_count; j++) {
+            printf("    %s: ", characters[i].linked_list_names[j]);
+            
+            LinkedListData* ll_data = &characters[i].linked_list_data[j];
+            
+            if (ll_data->is_array) {
+                printf("[\n");
+                for (int k = 0; k < ll_data->count; k++) {
+                    printf("      {\n");
+                    LinkedListDataInstance* instance = &ll_data->instances[k];
+                    for (int m = 0; m < instance->count; m++) {
+                        printf("        %s: ", instance->keys[m]);
+                        switch (instance->values[m].type) {
+                            case SDC_LL_VALUE_INT:
+                                printf("%ld", instance->values[m].data.int_value);
+                                break;
+                            case SDC_LL_VALUE_FLOAT:
+                                printf("%.2f", instance->values[m].data.float_value);
+                                break;
+                            case SDC_LL_VALUE_STRING:
+                                printf("\"%s\"", instance->values[m].data.string_value);
+                                break;
+                            case SDC_LL_VALUE_BOOL:
+                                printf("%s", instance->values[m].data.bool_value ? "true" : "false");
+                                break;
+                        }
+                        printf("\n");
+                    }
+                    printf("      }");
+                    if (k < ll_data->count - 1) printf(",");
+                    printf("\n");
+                }
+                printf("    ]\n");
+            } else {
+                printf("{\n");
+                LinkedListDataInstance* instance = &ll_data->instances[0];
+                for (int m = 0; m < instance->count; m++) {
+                    printf("      %s: ", instance->keys[m]);
+                    switch (instance->values[m].type) {
+                        case SDC_LL_VALUE_INT:
+                            printf("%ld", instance->values[m].data.int_value);
+                            break;
+                        case SDC_LL_VALUE_FLOAT:
+                            printf("%.2f", instance->values[m].data.float_value);
+                            break;
+                        case SDC_LL_VALUE_STRING:
+                            printf("\"%s\"", instance->values[m].data.string_value);
+                            break;
+                        case SDC_LL_VALUE_BOOL:
+                            printf("%s", instance->values[m].data.bool_value ? "true" : "false");
+                            break;
+                    }
+                    printf("\n");
+                }
+                printf("    }\n");
+            }
+        }
+        printf("\n");
+    }
+}
+
 void print_tag_definitions(StoryData* data) {
-    printf("=== TAG DEFINITIONS ===\n");
+    print_separator("TAG DEFINITIONS");
     int count;
     TagDefinition* tags = sdc_get_tag_definitions(data, &count);
     
@@ -66,20 +158,20 @@ void print_tag_definitions(StoryData* data) {
 }
 
 void print_chapters(StoryData* data) {
-    printf("=== CHAPTERS ===\n");
+    print_separator("CHAPTERS");
     for (int i = 0; i < data->chapter_count; i++) {
         printf("Chapter %d: %s\n", data->chapters[i].id, data->chapters[i].name);
     }
-    printf("\n");
 }
 
 void print_groups(StoryData* data) {
-    printf("=== GROUPS ===\n");
+    print_separator("GROUPS");
     for (int i = 0; i < data->group_count; i++) {
         Group* g = &data->groups[i];
         printf("Group %d: %s\n", g->id, g->name);
         printf("  Chapter: %d\n", g->chapter_id);
         printf("  Content: %s\n", g->content);
+        printf("  Parent Group: %d\n", g->parent_group);
         printf("  Tags: ");
         for (int j = 0; j < g->tag_count; j++) {
             printf("%s", g->tags[j].tag_name);
@@ -89,14 +181,46 @@ void print_groups(StoryData* data) {
             if (j < g->tag_count - 1) printf(", ");
         }
         printf("\n");
+        printf("  Linked Lists: ");
+        for (int j = 0; j < g->linked_list_count; j++) {
+            printf("%s%s", g->linked_lists[j], j < g->linked_list_count - 1 ? ", " : "");
+        }
+        printf("\n");
         printf("  Nodes: start=%d, end=%d, points=%d\n", 
                g->nodes.start_node, g->nodes.end_node, g->nodes.point_count);
         printf("\n");
     }
 }
 
+void print_linked_list_event(EventActionData* event) {
+    printf("        Linked List Event:\n");
+    printf("          Reference: %s\n", event->data.linked_list.reference);
+    printf("          Modifications:\n");
+    
+    for (int i = 0; i < event->data.linked_list.modification_count; i++) {
+        LinkedListFieldModification* mod = &event->data.linked_list.modifications[i];
+        printf("            Field: %s\n", mod->field);
+        
+        if (mod->has_amount) {
+            printf("              Amount: %.2f\n", mod->amount);
+        }
+        if (mod->has_set) {
+            printf("              Set: %s\n", mod->set_value);
+        }
+        if (mod->has_append) {
+            printf("              Append: %s\n", mod->append_value);
+        }
+        if (mod->has_replace) {
+            printf("              Replace: %s\n", mod->replace_value);
+        }
+        if (mod->is_toggle) {
+            printf("              Toggle: true\n");
+        }
+    }
+}
+
 void print_nodes(StoryData* data) {
-    printf("=== NODES ===\n");
+    print_separator("NODES");
     for (int i = 0; i < data->node_count; i++) {
         Node* n = &data->nodes[i];
         printf("Node %d: %s\n", n->id, n->title);
@@ -183,6 +307,10 @@ void print_nodes(StoryData* data) {
                                     printf("        Node: %d\n", e->data.progress_story.node_id);
                                 }
                                 break;
+                            case SDC_EVENT_TYPE_LINKED_LIST:
+                                printf("linked-list\n");
+                                print_linked_list_event(e);
+                                break;
                             default:
                                 printf("unknown\n");
                                 break;
@@ -211,14 +339,35 @@ int main(int argc, char** argv) {
         return 1;
     }
     
-    printf("Parse successful!\n\n");
+    printf("Parse successful!\n");
     
     print_states(data);
     print_global_vars(data);
+    print_linked_lists(data);
+    print_characters(data);
     print_tag_definitions(data);
     print_chapters(data);
     print_groups(data);
     print_nodes(data);
+    
+    // Test lookup functions
+    print_separator("LOOKUP TESTS");
+    
+    LinkedListDefinition* prof = sdc_get_linked_list(data, "Profession");
+    if (prof) {
+        printf("Found Profession linked list with scope: %s\n", prof->scope);
+    }
+    
+    Character* saniyah = sdc_get_character(data, "Saniyah");
+    if (saniyah) {
+        printf("Found character Saniyah with %d linked lists\n", saniyah->linked_list_count);
+    }
+    
+    Group* group1 = sdc_get_group(data, 1);
+    if (group1) {
+        printf("Found Group 1 with %d linked lists\n", group1->linked_list_count);
+        printf("Parent group: %d\n", group1->parent_group);
+    }
     
     sdc_free(data);
     

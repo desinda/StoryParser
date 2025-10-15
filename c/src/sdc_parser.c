@@ -55,6 +55,20 @@ typedef enum {
     TOKEN_TOGGLE,
     TOKEN_CHARACTER,
     TOKEN_EVENT,
+    TOKEN_LINKED_LISTS,
+    TOKEN_AMOUNT,
+    TOKEN_APPEND,
+    TOKEN_BIOGRAPHY,
+    TOKEN_CHARACTERS,
+    TOKEN_DESCRIPTION,
+    TOKEN_LINKED_LIST_DATA,
+    TOKEN_PARENT_GROUP,
+    TOKEN_REFERENCE,
+    TOKEN_REPLACE,
+    TOKEN_SCOPE,
+    TOKEN_STRUCTURE,
+    TOKEN_SET,
+    TOKEN_VALUES,
     
     // Symbols
     TOKEN_LBRACE,
@@ -318,6 +332,11 @@ static TokenType identifier_type(Lexer* lexer) {
     switch (start[0]) {
         case 'a':
             if (length == 6) return check_keyword(start, 6, "action", TOKEN_ACTION);
+            if (length == 6) return check_keyword(start, 6, "amount", TOKEN_AMOUNT);
+            if (length == 6) return check_keyword(start, 6, "append", TOKEN_APPEND);
+            break;
+        case 'b':
+            if (length == 9) return check_keyword(start, 9, "biography", TOKEN_BIOGRAPHY);
             break;
         case 'c':
             if (length == 7) {
@@ -328,11 +347,13 @@ static TokenType identifier_type(Lexer* lexer) {
             if (length == 6) return check_keyword(start, 6, "choice", TOKEN_CHOICE);
             if (length == 5) return check_keyword(start, 5, "color", TOKEN_COLOR);
             if (length == 9) return check_keyword(start, 9, "character", TOKEN_CHARACTER);
+            if (length == 10) return check_keyword(start, 10, "characters", TOKEN_CHARACTERS);
             break;
         case 'd':
             if (length == 8) return check_keyword(start, 8, "dialogue", TOKEN_DIALOGUE);
             if (length == 7) return check_keyword(start, 7, "default", TOKEN_DEFAULT);
             if (length == 4) return check_keyword(start, 4, "data", TOKEN_DATA);
+            if (length == 11) return check_keyword(start, 11, "description", TOKEN_DESCRIPTION);
             break;
         case 'e':
             if (length == 5) {
@@ -346,7 +367,7 @@ static TokenType identifier_type(Lexer* lexer) {
             if (length == 5) return check_keyword(start, 5, "false", TOKEN_FALSE);
             break;
         case 'g':
-            if (length == 11) return check_keyword(start, 11, "global_vars", TOKEN_GLOBAL_VARS);
+            if (length == 11) return check_keyword(start, 11, "global-vars", TOKEN_GLOBAL_VARS);
             if (length == 5) return check_keyword(start, 5, "group", TOKEN_GROUP);
             if (length == 4) return check_keyword(start, 4, "goto", TOKEN_GOTO);
             break;
@@ -355,6 +376,10 @@ static TokenType identifier_type(Lexer* lexer) {
             break;
         case 'k':
             if (length == 4) return check_keyword(start, 4, "keys", TOKEN_KEYS);
+            break;
+        case 'l':
+            if (length == 12) return check_keyword(start, 12, "linked-lists", TOKEN_LINKED_LISTS);
+            if (length == 16) return check_keyword(start, 16, "linked-list-data", TOKEN_LINKED_LIST_DATA);
             break;
         case 'n':
             if (length == 4) {
@@ -365,10 +390,20 @@ static TokenType identifier_type(Lexer* lexer) {
             break;
         case 'p':
             if (length == 6) return check_keyword(start, 6, "points", TOKEN_POINTS);
+            if (length == 12) return check_keyword(start, 11, "parent-group", TOKEN_PARENT_GROUP);
+            break;
+        case 'r':
+            if (length == 9) return check_keyword(start, 9, "reference", TOKEN_REFERENCE);
+            if (length == 7) return check_keyword(start, 7, "replace", TOKEN_REPLACE);
             break;
         case 's':
             if (length == 6) return check_keyword(start, 6, "states", TOKEN_STATES);
-            if (length == 5) return check_keyword(start, 5, "start", TOKEN_START);
+            if (length == 5) {
+                if (memcmp(start, "start", 5) == 0) return TOKEN_START;
+                if (memcmp(start, "scope", 5) == 0) return TOKEN_SCOPE;
+            }
+            if (length == 9) return check_keyword(start, 9, "structure", TOKEN_STRUCTURE);
+            if (length == 3) return check_keyword(start, 3, "set", TOKEN_SET);
             break;
         case 't':
             if (length == 4) {
@@ -385,6 +420,7 @@ static TokenType identifier_type(Lexer* lexer) {
             break;
         case 'v':
             if (length == 5) return check_keyword(start, 5, "value", TOKEN_VALUE);
+            if (length == 6) return check_keyword(start, 6, "values", TOKEN_VALUES);
             break;
     }
     
@@ -638,6 +674,468 @@ static bool parse_tag_definition(Parser* parser, TagDefinition* tag);
 static bool parse_chapter(Parser* parser, Chapter* chapter);
 static bool parse_group(Parser* parser, Group* group);
 static bool parse_node(Parser* parser, Node* node);
+
+static bool parse_linked_lists(Parser* parser) {
+    if (!expect(parser, TOKEN_LINKED_LISTS, "Expected 'linked-lists'")) return false;
+    if (!expect(parser, TOKEN_LBRACKET, "Expected '[' after 'linked-lists'")) return false;
+    
+    // Count linked lists first
+    int count = 0;
+    int saved_pos = parser->current;
+    while (!check(parser, TOKEN_RBRACKET) && !is_at_end_parser(parser)) {
+        if (check(parser, TOKEN_STRING)) {
+            count++;
+            advance_parser(parser);
+            if (check(parser, TOKEN_COLON)) {
+                advance_parser(parser);
+            }
+            if (check(parser, TOKEN_LBRACE)) {
+                int brace_count = 1;
+                advance_parser(parser);
+                while (brace_count > 0 && !is_at_end_parser(parser)) {
+                    if (check(parser, TOKEN_LBRACE)) brace_count++;
+                    if (check(parser, TOKEN_RBRACE)) brace_count--;
+                    advance_parser(parser);
+                }
+            }
+        } else {
+            advance_parser(parser);
+        }
+        if (check(parser, TOKEN_COMMA)) advance_parser(parser);
+    }
+    parser->current = saved_pos;
+    
+    // Allocate linked list array
+    parser->story->linked_lists = (LinkedListDefinition*)calloc(count, sizeof(LinkedListDefinition));
+    parser->story->linked_list_count = count;
+    
+    // Parse linked lists
+    int list_index = 0;
+    while (!check(parser, TOKEN_RBRACKET) && !is_at_end_parser(parser)) {
+        if (check(parser, TOKEN_STRING)) {
+            Token* name_token = advance_parser(parser);
+            LinkedListDefinition* list = &parser->story->linked_lists[list_index++];
+            list->name = strdup(name_token->value.string);
+            list->scope = NULL;
+            list->field_names = NULL;
+            list->fields = NULL;
+            list->field_count = 0;
+            
+            if (!expect(parser, TOKEN_COLON, "Expected ':' after linked-list name")) return false;
+            if (!expect(parser, TOKEN_LBRACE, "Expected '{' after ':'")) return false;
+            
+            while (!check(parser, TOKEN_RBRACE) && !is_at_end_parser(parser)) {
+                if (match(parser, TOKEN_SCOPE)) {
+                    if (!expect(parser, TOKEN_COLON, "Expected ':' after 'scope'")) return false;
+                    Token* scope_token = advance_parser(parser);
+                    list->scope = strdup(scope_token->value.string);
+                } else if (match(parser, TOKEN_STRUCTURE)) {
+                    if (!expect(parser, TOKEN_COLON, "Expected ':' after 'structure'")) return false;
+                    if (!expect(parser, TOKEN_LBRACE, "Expected '{' after 'structure:'")) return false;
+                    
+                    // Count fields
+                    int field_count = 0;
+                    int saved_pos2 = parser->current;
+                    while (!check(parser, TOKEN_RBRACE) && !is_at_end_parser(parser)) {
+                        if (check(parser, TOKEN_IDENTIFIER)) {
+                            field_count++;
+                            advance_parser(parser);
+                            if (check(parser, TOKEN_COLON)) {
+                                advance_parser(parser);
+                                if (check(parser, TOKEN_LBRACE)) {
+                                    int brace_count = 1;
+                                    advance_parser(parser);
+                                    while (brace_count > 0 && !is_at_end_parser(parser)) {
+                                        if (check(parser, TOKEN_LBRACE)) brace_count++;
+                                        if (check(parser, TOKEN_RBRACE)) brace_count--;
+                                        advance_parser(parser);
+                                    }
+                                }
+                            }
+                        } else {
+                            advance_parser(parser);
+                        }
+                        if (check(parser, TOKEN_COMMA)) advance_parser(parser);
+                    }
+                    parser->current = saved_pos2;
+                    
+                    list->field_count = field_count;
+                    list->field_names = (char**)malloc(sizeof(char*) * field_count);
+                    list->fields = (LinkedListField*)malloc(sizeof(LinkedListField) * field_count);
+                    
+                    // Parse fields
+                    int field_index = 0;
+                    while (!check(parser, TOKEN_RBRACE) && !is_at_end_parser(parser)) {
+                        if (check(parser, TOKEN_IDENTIFIER)) {
+                            Token* field_name = advance_parser(parser);
+                            list->field_names[field_index] = strdup(field_name->lexeme);
+                            
+                            if (!expect(parser, TOKEN_COLON, "Expected ':' after field name")) return false;
+                            if (!expect(parser, TOKEN_LBRACE, "Expected '{' after field name")) return false;
+                            
+                            while (!check(parser, TOKEN_RBRACE) && !is_at_end_parser(parser)) {
+                                if (match(parser, TOKEN_TYPE)) {
+                                    if (!expect(parser, TOKEN_COLON, "Expected ':' after 'type'")) return false;
+                                    Token* type_token = advance_parser(parser);
+                                    list->fields[field_index].type = strdup(type_token->value.string);
+                                } else {
+                                    advance_parser(parser);
+                                }
+                                if (check(parser, TOKEN_COMMA)) advance_parser(parser);
+                            }
+                            
+                            if (!expect(parser, TOKEN_RBRACE, "Expected '}' after field definition")) return false;
+                            field_index++;
+                        } else {
+                            advance_parser(parser);
+                        }
+                        if (check(parser, TOKEN_COMMA)) advance_parser(parser);
+                    }
+                    
+                    if (!expect(parser, TOKEN_RBRACE, "Expected '}' after structure")) return false;
+                } else {
+                    advance_parser(parser);
+                }
+                if (check(parser, TOKEN_COMMA)) advance_parser(parser);
+            }
+            
+            if (!expect(parser, TOKEN_RBRACE, "Expected '}' after linked-list definition")) return false;
+        } else {
+            advance_parser(parser);
+        }
+        if (check(parser, TOKEN_COMMA)) advance_parser(parser);
+    }
+    
+    if (!expect(parser, TOKEN_RBRACKET, "Expected ']' after linked-lists")) return false;
+    return true;
+}
+
+static LinkedListData parse_linked_list_data_value(Parser* parser) {
+    LinkedListData data;
+    data.instances = NULL;
+    data.count = 0;
+    data.is_array = false;
+    
+    if (check(parser, TOKEN_LBRACKET)) {
+        // Array of instances
+        advance_parser(parser);
+        data.is_array = true;
+        
+        // Count instances
+        int instance_count = 0;
+        int saved_pos = parser->current;
+        while (!check(parser, TOKEN_RBRACKET) && !is_at_end_parser(parser)) {
+            if (check(parser, TOKEN_STRING)) {
+                instance_count++;
+                advance_parser(parser);
+                if (check(parser, TOKEN_COLON)) {
+                    advance_parser(parser);
+                    if (check(parser, TOKEN_LBRACE)) {
+                        int brace_count = 1;
+                        advance_parser(parser);
+                        while (brace_count > 0 && !is_at_end_parser(parser)) {
+                            if (check(parser, TOKEN_LBRACE)) brace_count++;
+                            if (check(parser, TOKEN_RBRACE)) brace_count--;
+                            advance_parser(parser);
+                        }
+                    }
+                }
+            } else {
+                advance_parser(parser);
+            }
+            if (check(parser, TOKEN_COMMA)) advance_parser(parser);
+        }
+        parser->current = saved_pos;
+        
+        data.count = instance_count;
+        data.instances = (LinkedListDataInstance*)calloc(instance_count, sizeof(LinkedListDataInstance));
+        
+        // Parse instances
+        int inst_idx = 0;
+        while (!check(parser, TOKEN_RBRACKET) && !is_at_end_parser(parser)) {
+            if (check(parser, TOKEN_STRING)) {
+                advance_parser(parser); // Skip string key
+                if (check(parser, TOKEN_COLON)) advance_parser(parser);
+                if (check(parser, TOKEN_LBRACE)) {
+                    advance_parser(parser);
+                    
+                    // Count fields in this instance
+                    int field_count = 0;
+                    int saved_pos2 = parser->current;
+                    while (!check(parser, TOKEN_RBRACE) && !is_at_end_parser(parser)) {
+                        if (check(parser, TOKEN_IDENTIFIER)) {
+                            field_count++;
+                            advance_parser(parser);
+                            if (check(parser, TOKEN_COLON)) {
+                                advance_parser(parser);
+                                advance_parser(parser); // value
+                            }
+                        } else {
+                            advance_parser(parser);
+                        }
+                        if (check(parser, TOKEN_COMMA)) advance_parser(parser);
+                    }
+                    parser->current = saved_pos2;
+                    
+                    data.instances[inst_idx].count = field_count;
+                    data.instances[inst_idx].keys = (char**)malloc(sizeof(char*) * field_count);
+                    data.instances[inst_idx].values = (LinkedListValue*)malloc(sizeof(LinkedListValue) * field_count);
+                    
+                    // Parse fields
+                    int field_idx = 0;
+                    while (!check(parser, TOKEN_RBRACE) && !is_at_end_parser(parser)) {
+                        if (check(parser, TOKEN_IDENTIFIER)) {
+                            Token* key = advance_parser(parser);
+                            data.instances[inst_idx].keys[field_idx] = strdup(key->lexeme);
+                            
+                            if (check(parser, TOKEN_COLON)) advance_parser(parser);
+                            
+                            Token* value = peek_parser(parser);
+                            if (value->type == TOKEN_NUMBER) {
+                                advance_parser(parser);
+                                data.instances[inst_idx].values[field_idx].type = SDC_LL_VALUE_INT;
+                                data.instances[inst_idx].values[field_idx].data.int_value = value->value.number;
+                            } else if (value->type == TOKEN_FLOAT) {
+                                advance_parser(parser);
+                                data.instances[inst_idx].values[field_idx].type = SDC_LL_VALUE_FLOAT;
+                                data.instances[inst_idx].values[field_idx].data.float_value = value->value.float_number;
+                            } else if (value->type == TOKEN_STRING) {
+                                advance_parser(parser);
+                                data.instances[inst_idx].values[field_idx].type = SDC_LL_VALUE_STRING;
+                                data.instances[inst_idx].values[field_idx].data.string_value = strdup(value->value.string);
+                            } else if (value->type == TOKEN_TRUE || value->type == TOKEN_FALSE) {
+                                advance_parser(parser);
+                                data.instances[inst_idx].values[field_idx].type = SDC_LL_VALUE_BOOL;
+                                data.instances[inst_idx].values[field_idx].data.bool_value = value->value.bool_value;
+                            }
+                            
+                            field_idx++;
+                        } else {
+                            advance_parser(parser);
+                        }
+                        if (check(parser, TOKEN_COMMA)) advance_parser(parser);
+                    }
+                    
+                    if (check(parser, TOKEN_RBRACE)) advance_parser(parser);
+                    inst_idx++;
+                }
+            } else {
+                advance_parser(parser);
+            }
+            if (check(parser, TOKEN_COMMA)) advance_parser(parser);
+        }
+        
+        if (check(parser, TOKEN_RBRACKET)) advance_parser(parser);
+    } else if (check(parser, TOKEN_LBRACE)) {
+        // Single instance
+        advance_parser(parser);
+        data.is_array = false;
+        data.count = 1;
+        data.instances = (LinkedListDataInstance*)calloc(1, sizeof(LinkedListDataInstance));
+        
+        // Count fields
+        int field_count = 0;
+        int saved_pos = parser->current;
+        while (!check(parser, TOKEN_RBRACE) && !is_at_end_parser(parser)) {
+            if (check(parser, TOKEN_IDENTIFIER)) {
+                field_count++;
+                advance_parser(parser);
+                if (check(parser, TOKEN_COLON)) {
+                    advance_parser(parser);
+                    advance_parser(parser); // value
+                }
+            } else {
+                advance_parser(parser);
+            }
+            if (check(parser, TOKEN_COMMA)) advance_parser(parser);
+        }
+        parser->current = saved_pos;
+        
+        data.instances[0].count = field_count;
+        data.instances[0].keys = (char**)malloc(sizeof(char*) * field_count);
+        data.instances[0].values = (LinkedListValue*)malloc(sizeof(LinkedListValue) * field_count);
+        
+        // Parse fields
+        int field_idx = 0;
+        while (!check(parser, TOKEN_RBRACE) && !is_at_end_parser(parser)) {
+            if (check(parser, TOKEN_IDENTIFIER)) {
+                Token* key = advance_parser(parser);
+                data.instances[0].keys[field_idx] = strdup(key->lexeme);
+                
+                if (check(parser, TOKEN_COLON)) advance_parser(parser);
+                
+                Token* value = peek_parser(parser);
+                if (value->type == TOKEN_NUMBER) {
+                    advance_parser(parser);
+                    data.instances[0].values[field_idx].type = SDC_LL_VALUE_INT;
+                    data.instances[0].values[field_idx].data.int_value = value->value.number;
+                } else if (value->type == TOKEN_FLOAT) {
+                    advance_parser(parser);
+                    data.instances[0].values[field_idx].type = SDC_LL_VALUE_FLOAT;
+                    data.instances[0].values[field_idx].data.float_value = value->value.float_number;
+                } else if (value->type == TOKEN_STRING) {
+                    advance_parser(parser);
+                    data.instances[0].values[field_idx].type = SDC_LL_VALUE_STRING;
+                    data.instances[0].values[field_idx].data.string_value = strdup(value->value.string);
+                } else if (value->type == TOKEN_TRUE || value->type == TOKEN_FALSE) {
+                    advance_parser(parser);
+                    data.instances[0].values[field_idx].type = SDC_LL_VALUE_BOOL;
+                    data.instances[0].values[field_idx].data.bool_value = value->value.bool_value;
+                }
+                
+                field_idx++;
+            } else {
+                advance_parser(parser);
+            }
+            if (check(parser, TOKEN_COMMA)) advance_parser(parser);
+        }
+        
+        if (check(parser, TOKEN_RBRACE)) advance_parser(parser);
+    }
+    
+    return data;
+}
+
+static bool parse_characters(Parser* parser) {
+    if (!expect(parser, TOKEN_CHARACTERS, "Expected 'characters'")) return false;
+    if (!expect(parser, TOKEN_LBRACKET, "Expected '[' after 'characters'")) return false;
+    
+    // Count characters
+    int count = 0;
+    int saved_pos = parser->current;
+    while (!check(parser, TOKEN_RBRACKET) && !is_at_end_parser(parser)) {
+        if (check(parser, TOKEN_STRING)) {
+            count++;
+            advance_parser(parser);
+            if (check(parser, TOKEN_COLON)) {
+                advance_parser(parser);
+            }
+            if (check(parser, TOKEN_LBRACE)) {
+                int brace_count = 1;
+                advance_parser(parser);
+                while (brace_count > 0 && !is_at_end_parser(parser)) {
+                    if (check(parser, TOKEN_LBRACE)) brace_count++;
+                    if (check(parser, TOKEN_RBRACE)) brace_count--;
+                    advance_parser(parser);
+                }
+            }
+        } else {
+            advance_parser(parser);
+        }
+        if (check(parser, TOKEN_COMMA)) advance_parser(parser);
+    }
+    parser->current = saved_pos;
+    
+    parser->story->characters = (Character*)calloc(count, sizeof(Character));
+    parser->story->character_count = count;
+    
+    // Parse characters
+    int char_index = 0;
+    while (!check(parser, TOKEN_RBRACKET) && !is_at_end_parser(parser)) {
+        if (check(parser, TOKEN_STRING)) {
+            Token* name_token = advance_parser(parser);
+            Character* character = &parser->story->characters[char_index++];
+            character->name = strdup(name_token->value.string);
+            character->biography = strdup("");
+            character->description = strdup("");
+            character->linked_list_names = NULL;
+            character->linked_list_data = NULL;
+            character->linked_list_count = 0;
+            
+            if (!expect(parser, TOKEN_COLON, "Expected ':' after character name")) return false;
+            if (!expect(parser, TOKEN_LBRACE, "Expected '{' after ':'")) return false;
+            
+            while (!check(parser, TOKEN_RBRACE) && !is_at_end_parser(parser)) {
+                if (match(parser, TOKEN_BIOGRAPHY)) {
+                    if (!expect(parser, TOKEN_COLON, "Expected ':' after 'biography'")) return false;
+                    Token* bio = advance_parser(parser);
+                    free(character->biography);
+                    character->biography = strdup(bio->value.string);
+                } else if (match(parser, TOKEN_DESCRIPTION)) {
+                    if (!expect(parser, TOKEN_COLON, "Expected ':' after 'description'")) return false;
+                    Token* desc = advance_parser(parser);
+                    free(character->description);
+                    character->description = strdup(desc->value.string);
+                } else if (match(parser, TOKEN_LINKED_LIST_DATA)) {
+                    if (!expect(parser, TOKEN_COLON, "Expected ':' after 'linked-list-data'")) return false;
+                    if (!expect(parser, TOKEN_LBRACE, "Expected '{' after 'linked-list-data:'")) return false;
+                    
+                    // Count linked lists
+                    int ll_count = 0;
+                    int saved_pos2 = parser->current;
+                    while (!check(parser, TOKEN_RBRACE) && !is_at_end_parser(parser)) {
+                        if (check(parser, TOKEN_IDENTIFIER)) {
+                            ll_count++;
+                            advance_parser(parser);
+                            if (check(parser, TOKEN_COLON)) {
+                                advance_parser(parser);
+                                // Skip the value part
+                                int depth = 0;
+                                if (check(parser, TOKEN_LBRACE)) {
+                                    depth = 1;
+                                    advance_parser(parser);
+                                    while (depth > 0 && !is_at_end_parser(parser)) {
+                                        if (check(parser, TOKEN_LBRACE)) depth++;
+                                        if (check(parser, TOKEN_RBRACE)) depth--;
+                                        advance_parser(parser);
+                                    }
+                                } else if (check(parser, TOKEN_LBRACKET)) {
+                                    depth = 1;
+                                    advance_parser(parser);
+                                    while (depth > 0 && !is_at_end_parser(parser)) {
+                                        if (check(parser, TOKEN_LBRACKET)) depth++;
+                                        if (check(parser, TOKEN_RBRACKET)) depth--;
+                                        if (check(parser, TOKEN_LBRACE)) depth++;
+                                        if (check(parser, TOKEN_RBRACE)) depth--;
+                                        advance_parser(parser);
+                                    }
+                                }
+                            }
+                        } else {
+                            advance_parser(parser);
+                        }
+                        if (check(parser, TOKEN_COMMA)) advance_parser(parser);
+                    }
+                    parser->current = saved_pos2;
+                    
+                    character->linked_list_count = ll_count;
+                    character->linked_list_names = (char**)malloc(sizeof(char*) * ll_count);
+                    character->linked_list_data = (LinkedListData*)malloc(sizeof(LinkedListData) * ll_count);
+                    
+                    // Parse linked lists
+                    int ll_index = 0;
+                    while (!check(parser, TOKEN_RBRACE) && !is_at_end_parser(parser)) {
+                        if (check(parser, TOKEN_IDENTIFIER)) {
+                            Token* list_name = advance_parser(parser);
+                            character->linked_list_names[ll_index] = strdup(list_name->lexeme);
+                            
+                            if (!expect(parser, TOKEN_COLON, "Expected ':' after list name")) return false;
+                            
+                            character->linked_list_data[ll_index] = parse_linked_list_data_value(parser);
+                            ll_index++;
+                        } else {
+                            advance_parser(parser);
+                        }
+                        if (check(parser, TOKEN_COMMA)) advance_parser(parser);
+                    }
+                    
+                    if (!expect(parser, TOKEN_RBRACE, "Expected '}' after linked-list-data")) return false;
+                } else {
+                    advance_parser(parser);
+                }
+                if (check(parser, TOKEN_COMMA)) advance_parser(parser);
+            }
+            
+            if (!expect(parser, TOKEN_RBRACE, "Expected '}' after character")) return false;
+        } else {
+            advance_parser(parser);
+        }
+        if (check(parser, TOKEN_COMMA)) advance_parser(parser);
+    }
+    
+    if (!expect(parser, TOKEN_RBRACKET, "Expected ']' after characters")) return false;
+    return true;
+}
 
 // Parse states section
 static bool parse_states(Parser* parser) {
@@ -1119,6 +1617,9 @@ static bool parse_group(Parser* parser, Group* group) {
     group->content = NULL;
     group->tags = NULL;
     group->tag_count = 0;
+    group->linked_lists = NULL;
+    group->linked_list_count = 0;
+    group->parent_group = -1;  // -1 means no parent
     memset(&group->nodes, 0, sizeof(NodeGraph));
     
     while (!check(parser, TOKEN_RBRACE) && !is_at_end_parser(parser)) {
@@ -1134,12 +1635,44 @@ static bool parse_group(Parser* parser, Group* group) {
             if (!expect(parser, TOKEN_COLON, "Expected ':' after 'content'")) return false;
             Token* content_token = advance_parser(parser);
             group->content = strdup(content_token->value.string);
+        } else if (match(parser, TOKEN_PARENT_GROUP)) {
+            if (!expect(parser, TOKEN_COLON, "Expected ':' after 'parentGroup'")) return false;
+            Token* parent_token = advance_parser(parser);
+            group->parent_group = (int)parent_token->value.number;
         } else if (match(parser, TOKEN_TAGS)) {
             if (!expect(parser, TOKEN_COLON, "Expected ':' after 'tags'")) return false;
             if (!parse_group_tags(parser, group)) return false;
         } else if (match(parser, TOKEN_NODES)) {
             if (!expect(parser, TOKEN_COLON, "Expected ':' after 'nodes'")) return false;
             if (!parse_node_graph(parser, &group->nodes)) return false;
+        } else if (match(parser, TOKEN_LINKED_LISTS)) {
+            if (!expect(parser, TOKEN_COLON, "Expected ':' after 'linked-lists'")) return false;
+            if (!expect(parser, TOKEN_LBRACKET, "Expected '['")) return false;
+            
+            // Count linked lists
+            int count = 0;
+            int saved_pos = parser->current;
+            while (!check(parser, TOKEN_RBRACKET) && !is_at_end_parser(parser)) {
+                if (check(parser, TOKEN_STRING)) count++;
+                advance_parser(parser);
+                if (check(parser, TOKEN_COMMA)) advance_parser(parser);
+            }
+            parser->current = saved_pos;
+            
+            group->linked_list_count = count;
+            group->linked_lists = (char**)malloc(sizeof(char*) * count);
+            
+            // Parse linked lists
+            int index = 0;
+            while (!check(parser, TOKEN_RBRACKET) && !is_at_end_parser(parser)) {
+                if (check(parser, TOKEN_STRING)) {
+                    Token* list_name = advance_parser(parser);
+                    group->linked_lists[index++] = strdup(list_name->value.string);
+                }
+                if (check(parser, TOKEN_COMMA)) advance_parser(parser);
+            }
+            
+            if (!expect(parser, TOKEN_RBRACKET, "Expected ']'")) return false;
         } else {
             advance_parser(parser);
         }
@@ -1346,6 +1879,115 @@ static bool parse_timeline(Parser* parser, Node* node) {
                                     event->data.progress_story.chapter_id = -1;
                                     event->data.progress_story.group_id = -1;
                                     event->data.progress_story.node_id = -1;
+                                } else if (strcmp(event_type->value.string, "linked-list") == 0) {
+                                    event->event_type = SDC_EVENT_TYPE_LINKED_LIST;
+                                    event->data.linked_list.reference = NULL;
+                                    event->data.linked_list.modifications = NULL;
+                                    event->data.linked_list.modification_count = 0;
+                                    
+                                    // Parse reference and values
+                                    while (!check(parser, TOKEN_RBRACE) && data_brace_depth > 0) {
+                                        if (match(parser, TOKEN_REFERENCE)) {
+                                            if (!expect(parser, TOKEN_COLON, "Expected ':'")) return false;
+                                            Token* ref = advance_parser(parser);
+                                            event->data.linked_list.reference = strdup(ref->value.string);
+                                        } else if (match(parser, TOKEN_VALUES)) {
+                                            if (!expect(parser, TOKEN_COLON, "Expected ':'")) return false;
+                                            if (!expect(parser, TOKEN_LBRACKET, "Expected '['")) return false;
+                                            
+                                            // Count modifications
+                                            int mod_count = 0;
+                                            int saved_pos3 = parser->current;
+                                            while (!check(parser, TOKEN_RBRACKET) && !is_at_end_parser(parser)) {
+                                                if (check(parser, TOKEN_STRING)) {
+                                                    mod_count++;
+                                                    advance_parser(parser);
+                                                    if (check(parser, TOKEN_COLON)) {
+                                                        advance_parser(parser);
+                                                        if (check(parser, TOKEN_LBRACE)) {
+                                                            int depth = 1;
+                                                            advance_parser(parser);
+                                                            while (depth > 0 && !is_at_end_parser(parser)) {
+                                                                if (check(parser, TOKEN_LBRACE)) depth++;
+                                                                if (check(parser, TOKEN_RBRACE)) depth--;
+                                                                advance_parser(parser);
+                                                            }
+                                                        }
+                                                    }
+                                                } else {
+                                                    advance_parser(parser);
+                                                }
+                                                if (check(parser, TOKEN_COMMA)) advance_parser(parser);
+                                            }
+                                            parser->current = saved_pos3;
+                                            
+                                            event->data.linked_list.modification_count = mod_count;
+                                            event->data.linked_list.modifications = 
+                                                (LinkedListFieldModification*)calloc(mod_count, sizeof(LinkedListFieldModification));
+                                            
+                                            // Parse modifications
+                                            int mod_idx = 0;
+                                            while (!check(parser, TOKEN_RBRACKET) && !is_at_end_parser(parser)) {
+                                                if (check(parser, TOKEN_STRING)) {
+                                                    Token* field_name = advance_parser(parser);
+                                                    LinkedListFieldModification* mod = &event->data.linked_list.modifications[mod_idx++];
+                                                    mod->field = strdup(field_name->value.string);
+                                                    mod->has_amount = false;
+                                                    mod->has_set = false;
+                                                    mod->has_append = false;
+                                                    mod->has_replace = false;
+                                                    mod->is_toggle = false;
+                                                    
+                                                    if (!expect(parser, TOKEN_COLON, "Expected ':'")) return false;
+                                                    if (!expect(parser, TOKEN_LBRACE, "Expected '{'")) return false;
+                                                    
+                                                    while (!check(parser, TOKEN_RBRACE) && !is_at_end_parser(parser)) {
+                                                        if (match(parser, TOKEN_AMOUNT)) {
+                                                            if (!expect(parser, TOKEN_COLON, "Expected ':'")) return false;
+                                                            Token* amt = advance_parser(parser);
+                                                            if (amt->type == TOKEN_FLOAT) {
+                                                                mod->amount = amt->value.float_number;
+                                                            } else {
+                                                                mod->amount = (double)amt->value.number;
+                                                            }
+                                                            mod->has_amount = true;
+                                                        } else if (match(parser, TOKEN_SET)) {
+                                                            if (!expect(parser, TOKEN_COLON, "Expected ':'")) return false;
+                                                            Token* val = advance_parser(parser);
+                                                            mod->set_value = strdup(val->value.string);
+                                                            mod->has_set = true;
+                                                        } else if (match(parser, TOKEN_APPEND)) {
+                                                            if (!expect(parser, TOKEN_COLON, "Expected ':'")) return false;
+                                                            Token* val = advance_parser(parser);
+                                                            mod->append_value = strdup(val->value.string);
+                                                            mod->has_append = true;
+                                                        } else if (match(parser, TOKEN_REPLACE)) {
+                                                            if (!expect(parser, TOKEN_COLON, "Expected ':'")) return false;
+                                                            Token* val = advance_parser(parser);
+                                                            mod->replace_value = strdup(val->value.string);
+                                                            mod->has_replace = true;
+                                                        } else if (match(parser, TOKEN_TOGGLE)) {
+                                                            if (!expect(parser, TOKEN_COLON, "Expected ':'")) return false;
+                                                            Token* val = advance_parser(parser);
+                                                            mod->is_toggle = (strcmp(val->value.string, "toggle") == 0);
+                                                        } else {
+                                                            advance_parser(parser);
+                                                        }
+                                                        if (check(parser, TOKEN_COMMA)) advance_parser(parser);
+                                                    }
+                                                    
+                                                    if (!expect(parser, TOKEN_RBRACE, "Expected '}'")) return false;
+                                                } else {
+                                                    advance_parser(parser);
+                                                }
+                                                if (check(parser, TOKEN_COMMA)) advance_parser(parser);
+                                            }
+                                            
+                                            if (!expect(parser, TOKEN_RBRACKET, "Expected ']'")) return false;
+                                        }
+                                        
+                                        if (check(parser, TOKEN_COMMA)) advance_parser(parser);
+                                    }
                                 }
                             }
                         } else if (match(parser, TOKEN_NAME)) {
@@ -1427,6 +2069,7 @@ static bool parse_timeline(Parser* parser, Node* node) {
                             if (event->event_type == SDC_EVENT_TYPE_PROGRESS_STORY) {
                                 event->data.progress_story.node_id = (int)ref_id->value.number;
                             }
+                        
                         } else {
                             if (check(parser, TOKEN_LBRACE)) data_brace_depth++;
                             if (check(parser, TOKEN_RBRACE)) {
@@ -1562,6 +2205,12 @@ static bool parse_story(Parser* parser) {
             if (!parse_node(parser, &parser->story->nodes[parser->story->node_count - 1])) {
                 return false;
             }
+        else if (check(parser, TOKEN_LINKED_LISTS)) {
+            if (!parse_linked_lists(parser)) return false;
+        } else if (check(parser, TOKEN_CHARACTERS)) {
+            if (!parse_characters(parser)) return false;
+        }
+
         } else {
             advance_parser(parser);
         }
@@ -1667,16 +2316,23 @@ void sdc_free(StoryData* data) {
     }
     free(data->chapters);
     
-    // Free groups
+    // Free groups (updated to include linked_lists)
     for (int i = 0; i < data->group_count; i++) {
         free(data->groups[i].name);
         free(data->groups[i].content);
+        
         for (int j = 0; j < data->groups[i].tag_count; j++) {
             free(data->groups[i].tags[j].tag_name);
             free(data->groups[i].tags[j].selected_key);
             free(data->groups[i].tags[j].value);
         }
         free(data->groups[i].tags);
+        
+        for (int j = 0; j < data->groups[i].linked_list_count; j++) {
+            free(data->groups[i].linked_lists[j]);
+        }
+        free(data->groups[i].linked_lists);
+        
         free(data->groups[i].nodes.point_keys);
         for (int j = 0; j < data->groups[i].nodes.point_count; j++) {
             free(data->groups[i].nodes.point_values[j]);
@@ -1686,10 +2342,11 @@ void sdc_free(StoryData* data) {
     }
     free(data->groups);
     
-    // Free nodes
+    // Free nodes (updated to include linked-list events)
     for (int i = 0; i < data->node_count; i++) {
         free(data->nodes[i].title);
         free(data->nodes[i].content);
+        
         for (int j = 0; j < data->nodes[i].timeline_count; j++) {
             if (data->nodes[i].timeline[j].type == SDC_TIMELINE_ITEM_DIALOGUE) {
                 Dialogue* d = &data->nodes[i].timeline[j].data.dialogue;
@@ -1716,6 +2373,15 @@ void sdc_free(StoryData* data) {
                     } else if (e->event_type == SDC_EVENT_TYPE_REMOVE_STATE) {
                         free(e->data.remove_state.name);
                         free(e->data.remove_state.character);
+                    } else if (e->event_type == SDC_EVENT_TYPE_LINKED_LIST) {
+                        free(e->data.linked_list.reference);
+                        for (int k = 0; k < e->data.linked_list.modification_count; k++) {
+                            free(e->data.linked_list.modifications[k].field);
+                            free(e->data.linked_list.modifications[k].set_value);
+                            free(e->data.linked_list.modifications[k].append_value);
+                            free(e->data.linked_list.modifications[k].replace_value);
+                        }
+                        free(e->data.linked_list.modifications);
                     }
                 }
             }
@@ -1724,11 +2390,78 @@ void sdc_free(StoryData* data) {
     }
     free(data->nodes);
     
+    for (int i = 0; i < data->linked_list_count; i++) {
+        free(data->linked_lists[i].name);
+        free(data->linked_lists[i].scope);
+        for (int j = 0; j < data->linked_lists[i].field_count; j++) {
+            free(data->linked_lists[i].field_names[j]);
+            free(data->linked_lists[i].fields[j].type);
+        }
+        free(data->linked_lists[i].field_names);
+        free(data->linked_lists[i].fields);
+    }
+    free(data->linked_lists);
+    
+    // Free characters
+    for (int i = 0; i < data->character_count; i++) {
+        free(data->characters[i].name);
+        free(data->characters[i].biography);
+        free(data->characters[i].description);
+        
+        for (int j = 0; j < data->characters[i].linked_list_count; j++) {
+            free(data->characters[i].linked_list_names[j]);
+            
+            LinkedListData* ll_data = &data->characters[i].linked_list_data[j];
+            for (int k = 0; k < ll_data->count; k++) {
+                for (int m = 0; m < ll_data->instances[k].count; m++) {
+                    free(ll_data->instances[k].keys[m]);
+                    if (ll_data->instances[k].values[m].type == SDC_LL_VALUE_STRING) {
+                        free(ll_data->instances[k].values[m].data.string_value);
+                    }
+                }
+                free(ll_data->instances[k].keys);
+                free(ll_data->instances[k].values);
+            }
+            free(ll_data->instances);
+        }
+        free(data->characters[i].linked_list_names);
+        free(data->characters[i].linked_list_data);
+    }
+    free(data->characters);
+    
     free(data);
 }
 
 const char* sdc_get_error(void) {
     return last_error;
+}
+
+LinkedListDefinition* sdc_get_linked_list(StoryData* data, const char* name) {
+    for (int i = 0; i < data->linked_list_count; i++) {
+        if (strcmp(data->linked_lists[i].name, name) == 0) {
+            return &data->linked_lists[i];
+        }
+    }
+    return NULL;
+}
+
+Character* sdc_get_character(StoryData* data, const char* name) {
+    for (int i = 0; i < data->character_count; i++) {
+        if (strcmp(data->characters[i].name, name) == 0) {
+            return &data->characters[i];
+        }
+    }
+    return NULL;
+}
+
+LinkedListDefinition* sdc_get_linked_lists(StoryData* data, int* count) {
+    if (count) *count = data->linked_list_count;
+    return data->linked_lists;
+}
+
+Character* sdc_get_characters(StoryData* data, int* count) {
+    if (count) *count = data->character_count;
+    return data->characters;
 }
 
 Chapter* sdc_get_chapter(StoryData* data, int id) {

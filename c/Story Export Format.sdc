@@ -25,6 +25,54 @@ global_vars [
     }
 ]
 
+linked-lists [
+	"Profession": {
+		scope: "both"
+		structure: {
+			ID: {
+				type: "integer"
+			}
+			Value: {
+				type: "integer"
+			}
+		}
+	}
+	"Stats": {
+		scope: "character"
+		structure: {
+			Strength: {
+				type: "integer"
+			}
+			Health: {
+				type: "integer"
+			}
+		}
+	}
+]
+
+characters [
+	"Saniyah": {
+		biography: ""
+		description: ""
+		linked-list-data: {
+			Stats: {
+				Strength: 8
+				Health: 125
+			}
+			Profession: [
+				"1": {
+					ID: 1
+					Value: 5
+				},
+				"2": {
+					ID: 5
+					Value: 12
+				}
+			]
+		}
+	}
+]
+
 tags [
     "Location": {
         type: "key-value"
@@ -77,6 +125,9 @@ group 1 {
             2: [ 3 ]
         }
     }
+	linked-lists: [
+		"Profession"
+	]
 }
 
 node 1 {
@@ -221,5 +272,29 @@ node 1 {
                 node: @node(6)
             }
         }
+		action 14 {
+			type: "event"
+			data: {
+				type: "linked-list"
+				reference: "Profession"
+				values: [
+					"Value": {
+						amount: 4
+					}
+				]
+			}
+		}
+		action 15 {
+			type: "event"
+			data: {
+				type: "linked-list"
+				reference: "Profession"
+				values: [
+					"Value": {
+						amount: -1
+					}
+				]
+			}
+		}
     }
 }
