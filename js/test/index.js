@@ -1,6 +1,8 @@
 import { SDCParser } from "../sdc_parser.js";
 
 const parser = new SDCParser();
+
+// Parse the full __StoryStructure.sdc content
 const data = parser.parse(`
 # This is a comment
 states [
@@ -27,6 +29,54 @@ global_vars [
         type: "float"
         default: 30.0
     }
+]
+
+linked-lists [
+	"Profession": {
+		scope: "both"
+		structure: {
+			ID: {
+				type: "integer"
+			}
+			Value: {
+				type: "integer"
+			}
+		}
+	}
+	"Stats": {
+		scope: "character"
+		structure: {
+			Strength: {
+				type: "integer"
+			}
+			Health: {
+				type: "integer"
+			}
+		}
+	}
+]
+
+characters [
+	"Saniyah": {
+		biography: ""
+		description: ""
+		linked-list-data: {
+			Stats: {
+				Strength: 8
+				Health: 125
+			}
+			Profession: [
+				"1": {
+					ID: 1
+					Value: 5
+				},
+				"2": {
+					ID: 5
+					Value: 12
+				}
+			]
+		}
+	}
 ]
 
 tags [
@@ -81,6 +131,9 @@ group 1 {
             2: [ 3 ]
         }
     }
+	linked-lists: [
+		"Profession"
+	]
 }
 
 node 1 {
@@ -225,10 +278,117 @@ node 1 {
                 node: @node(6)
             }
         }
+		action 14 {
+			type: "event"
+			data: {
+				type: "linked-list"
+				reference: "Profession"
+				values: [
+					"Value": {
+						amount: 4
+					}
+				]
+			}
+		}
+		action 15 {
+			type: "event"
+			data: {
+				type: "linked-list"
+				reference: "Profession"
+				values: [
+					"Value": {
+						amount: -1
+					}
+				]
+			}
+		}
     }
 }
 `);
 
-console.log(parser.getChapter(data, 1));
-console.log(parser.getGroup(data, 1));
-console.log(parser.getNode(data, 1));
+if (!data) {
+  console.error("Parse failed:", parser.getError());
+} else {
+  console.log("=== PARSE SUCCESSFUL ===\n");
+  
+  // Test basic lookups
+  console.log("=== CHAPTER 1 ===");
+  console.log(parser.getChapter(data, 1));
+  console.log();
+  
+  console.log("=== GROUP 1 ===");
+  console.log(parser.getGroup(data, 1));
+  console.log();
+  
+  console.log("=== NODE 1 ===");
+  console.log(parser.getNode(data, 1));
+  console.log();
+  
+  // Test new features
+  console.log("=== LINKED LISTS ===");
+  console.log("All linked lists:", data['linked-lists']);
+  console.log();
+  
+  console.log("Profession linked list:");
+  const profession = parser.getLinkedList(data, "Profession");
+  console.log(JSON.stringify(profession, null, 2));
+  console.log();
+  
+  console.log("Stats linked list:");
+  const stats = parser.getLinkedList(data, "Stats");
+  console.log(JSON.stringify(stats, null, 2));
+  console.log();
+  
+  console.log("=== CHARACTERS ===");
+  console.log("All characters:", data.characters);
+  console.log();
+  
+  console.log("Saniyah character:");
+  const saniyah = parser.getCharacter(data, "Saniyah");
+  console.log(JSON.stringify(saniyah, null, 2));
+  console.log();
+  
+  console.log("=== STATES ===");
+  console.log(data.states);
+  console.log();
+  
+  console.log("=== GLOBAL VARS ===");
+  console.log(data['global-vars']);
+  console.log();
+  
+  console.log("=== TAGS ===");
+  console.log(data.tags);
+  console.log();
+  
+  // Test linked-list event actions
+  console.log("=== LINKED-LIST EVENT ACTIONS ===");
+  const node1 = parser.getNode(data, 1);
+  const action14 = node1.timeline.find(item => item.number === 14);
+  const action15 = node1.timeline.find(item => item.number === 15);
+  
+  console.log("Action 14 (increment Value by 4):");
+  console.log(JSON.stringify(action14, null, 2));
+  console.log();
+  
+  console.log("Action 15 (decrement Value by 1):");
+  console.log(JSON.stringify(action15, null, 2));
+  console.log();
+  
+  // Test other event actions
+  console.log("=== OTHER EVENT ACTIONS ===");
+  const action7 = node1.timeline.find(item => item.number === 7);
+  console.log("Action 7 (adjust Money variable):");
+  console.log(JSON.stringify(action7, null, 2));
+  console.log();
+  
+  const action13 = node1.timeline.find(item => item.number === 13);
+  console.log("Action 13 (progress story):");
+  console.log(JSON.stringify(action13, null, 2));
+  console.log();
+  
+  // Show group's linked-lists
+  console.log("=== GROUP LINKED LISTS ===");
+  const group1 = parser.getGroup(data, 1);
+  console.log("Group 1 uses these linked lists:", group1['linked-lists']);
+  console.log();
+}
