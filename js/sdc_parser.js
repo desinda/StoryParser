@@ -325,13 +325,16 @@ class Lexer {
   }
   
   scanCodeBlock() {
+     console.log('>>> scanCodeBlock CALLED <<<');
     this.advance(); // <
     this.advance(); // !
     
     const codeStart = this.current;
+    console.log('Code starts at position:', codeStart);
     
     while (!this.isAtEnd()) {
       if (this.peek() === '!' && this.peekNext() === '>') {
+        console.log('Found end marker !> at position:', this.current);
         break;
       }
       if (this.peek() === '\n') {
@@ -342,14 +345,20 @@ class Lexer {
     }
     
     if (this.isAtEnd()) {
+      console.error('ERROR: Reached end without finding !>');
       this.addToken(TokenType.ERROR);
       return;
     }
     
     const code = this.source.substring(codeStart, this.current);
+    console.log('Extracted code length:', code.length);
+    console.log('Code preview:', code.substring(0, 50));
+    
     this.advance(); // !
     this.advance(); // >
+    
     this.addToken(TokenType.CODE_BLOCK, code);
+    console.log('CODE_BLOCK token added');
   }
   
   scanTokens() {
@@ -374,11 +383,12 @@ class Lexer {
         case ')': this.addToken(TokenType.RPAREN); break;
         
         case '<':
+          console.log('Found < at position', this.current - 1);
           if (this.peek() === '!') {
-            this.current--;
-            this.column--;
+            console.log('Next char is !, calling scanCodeBlock');
             this.scanCodeBlock();
           } else {
+            console.log('Next char is NOT !, skipping');
             this.addToken(TokenType.ERROR);
           }
           break;
@@ -1082,23 +1092,59 @@ class Parser {
             const typeToken = this.peek();
             
             if (typeToken.type === TokenType.STRING) {
-              this.advance();
+              const next = this.advance();
+
+              console.log(`Next token: ${next.type}, ${next.value}`);
               
               if (typeToken.value === 'code') {
                 action['action-type'] = ActionType.CODE;
                 
+                console.log('=== ENTERING CODE BLOCK SEARCH ===');
+                console.log('Current token:', this.peek().type, this.peek().lexeme?.substring(0, 20));
+                
                 while (braceDepth > 0 && !this.isAtEnd()) {
+                  let tokenConsumed = false;
+                  
+                  const currentToken = this.peek();
+                  console.log(`  Checking token: ${currentToken.type} | braceDepth: ${braceDepth}`);
+                  
                   if (this.check(TokenType.CODE_BLOCK)) {
+                    console.log('  ✓ Found CODE_BLOCK token!');
                     const codeToken = this.advance();
                     action.data.code = codeToken.value;
+                    console.log(`  Code captured: ${codeToken.value?.substring(0, 50)}...`);
+                    tokenConsumed = true;
                   }
-                  if (this.check(TokenType.LBRACE)) braceDepth++;
-                  if (this.check(TokenType.RBRACE)) {
+                  
+                  if (this.check(TokenType.LBRACE)) {
+                    console.log('  Found LBRACE');
+                    braceDepth++;
+                    if (!tokenConsumed) {
+                      this.advance();
+                      tokenConsumed = true;
+                    }
+                  } else if (this.check(TokenType.RBRACE)) {
+                    console.log('  Found RBRACE');
                     braceDepth--;
-                    if (braceDepth === 0) break;
+                    if (braceDepth === 0) {
+                      console.log('  Breaking - braceDepth reached 0');
+                      break;
+                    }
+                    if (!tokenConsumed) {
+                      this.advance();
+                      tokenConsumed = true;
+                    }
                   }
-                  this.advance();
+                  
+                  // Only advance if we haven't consumed a token yet
+                  if (!tokenConsumed) {
+                    console.log('  Advancing to skip token');
+                    this.advance();
+                  }
                 }
+                
+                console.log('=== EXITED CODE BLOCK SEARCH ===');
+                console.log('Final action.data.code:', action.data.code ? 'SET' : 'UNDEFINED');
                 break;
               } else if (typeToken.value === 'event') {
                 action['action-type'] = ActionType.EVENT;
@@ -1403,6 +1449,60 @@ class Parser {
         this.advance();
       }
     }
+ console.log('>>> scanCodeBlock CALLED <<<');
+  this.advance(); // <
+  this.advance(); // !
+  
+  const codeStart = this.current;
+  console.log('Code starts at position:', codeStart);
+  
+  while (!this.isAtEnd()) {
+    if (this.peek() === '!' && this.peekNext() === '>') {
+      console.log('Found end marker !> at position:', this.current);
+      break;
+    }
+    if (this.peek() === '\n') {
+      this.line++;
+      this.column = 0;
+    }
+    this.advance();
+  }
+  
+  if (this.isAtEnd()) {
+    console.error('ERROR: Reached end without finding !>');
+    this.addToken(TokenType.ERROR);
+    return;
+  }
+  
+  const code = this.source.substring(codeStart, this.current);
+  console.log('Extracted code length:', code.length);
+  console.log('Code preview:', code.substring(0, 50));
+  
+  this.advance(); // !
+  this.advance(); // >
+  
+  this.addToken(TokenType.CODE_BLOCK, code);
+  console.log('CODE_BLOCK token added');
+    // DEBUG: Check if CODE_BLOCK tokens exist
+    console.log('=== TOKEN SCAN COMPLETE ===');
+    const codeBlocks = this.tokens.filter(t => t.type === TokenType.CODE_BLOCK);
+    console.log(`Found ${codeBlocks.length} CODE_BLOCK tokens`);
+    if (codeBlocks.length > 0) {
+      console.log('First CODE_BLOCK preview:', codeBlocks[0].value?.substring(0, 50));
+    }
+    
+    // Also check for the pattern: TYPE -> COLON -> STRING "code" -> ???
+    for (let i = 0; i < this.tokens.length; i++) {
+      if (this.tokens[i].type === TokenType.TYPE) {
+        console.log(`\nFound TYPE at index ${i}:`);
+        console.log(`  [${i}] TYPE`);
+        console.log(`  [${i+1}] ${this.tokens[i+1]?.type}`);
+        console.log(`  [${i+2}] ${this.tokens[i+2]?.type} = "${this.tokens[i+2]?.value}"`);
+        console.log(`  [${i+3}] ${this.tokens[i+3]?.type} ${this.tokens[i+3]?.value?.substring(0, 30) || ''}`);
+        console.log(`  [${i+4}] ${this.tokens[i+4]?.type}`);
+      }
+    }
+    console.log('=== END TOKEN DEBUG ===\n');
     
     return storyData;
   }
