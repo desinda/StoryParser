@@ -92,3 +92,505 @@ If you run into any errors, please feel free to report any issues.
 
 ## LICENSE
 This library is licensed under MIT.
+
+# Story Engine Documentation
+
+## Overview
+
+The Story Engine is a stateless execution engine for `.sdc` story files. It follows a clean separation of concerns:
+
+- **Parser**: Reads `.sdc` files → data structures
+- **Engine**: Executes story logic with parameter stack
+- **Game State**: User-managed, completely separate
+- **Parameter Stack**: Temporary bridge for one execution cycle
+
+## Key Concepts
+
+### 1. Stateless Execution
+
+The engine **does not manage game state**. Instead, it:
+- Executes story items (dialogues, actions, events)
+- Returns execution results
+- Allows you to update your own game state based on results
+
+### 2. Parameter Stack
+
+A temporary storage that exists only for one execution cycle:
+
+```javascript
+// Add parameter before execution
+engine.addParameterNext('Profession', 'Value', 10);
+
+// Execute (consumes parameters)
+const result = engine.execute();
+
+// Parameters are automatically cleared after execution
+```
+
+### 3. Execution Results
+
+Every execution returns a result object describing what happened:
+
+- `DialogueResult` - Dialogue was displayed
+- `ActionResult` - Action was executed
+- `EventResult` - Event occurred (variable change, state change, etc.)
+- `ChoiceResult` - Choice presented to player
+- `TransitionResult` - Navigation occurred (node/group/chapter)
+- `EndResult` - Timeline ended or exit occurred
+
+## API Reference
+
+### StoryEngine Class
+
+#### Constructor
+
+```javascript
+const engine = new StoryEngine(storyData);
+```
+
+#### Navigation Methods
+
+```javascript
+// Start story at specific location
+engine.start(chapterId, groupId, nodeId);
+
+// Navigate to specific node
+engine.gotoNode(nodeId);
+
+// Enter a group
+engine.enterGroup(groupId);
+
+// Exit current node
+engine.exitNode();
+
+// Exit current group
+engine.exitGroup();
+
+// Get current node/group/chapter
+engine.getCurrentNode();
+engine.getCurrentGroup();
+engine.getCurrentChapter();
+```
+
+#### Execution Methods
+
+```javascript
+// Execute next timeline item
+const result = engine.execute();
+
+// Peek at next item without executing
+const item = engine.peekNext();
+
+// Advance to next item manually
+engine.advance();
+```
+
+#### Parameter Methods
+
+```javascript
+// Add parameter for next execution
+engine.addParameterNext(context, key, value);
+
+// Get parameter value
+const value = engine.getParameter(context, key);
+
+// Clear all parameters
+engine.clearParameters();
+
+// Get all parameters (debugging)
+const params = engine.getParameterStack();
+```
+
+#### Choice Methods
+
+```javascript
+// Check if waiting for choice
+if (engine.isAwaitingChoice()) {
+  // Select a choice
+  engine.selectChoice(choiceIndex);
+}
+```
+
+#### Utility Methods
+
+```javascript
+// Get current state (debugging)
+const state = engine.getState();
+
+// Reset engine to initial state
+engine.reset();
+```
+
+## Usage Patterns
+
+### Basic Pattern
+
+```javascript
+// Parse story
+const parser = new SDCParser();
+const storyData = parser.parse(sourceCode);
+
+// Create engine
+const engine = new StoryEngine(storyData);
+
+// Start story
+engine.start(1, 1, 1); // Chapter 1, Group 1, Node 1
+
+// Execute loop
+while (true) {
+  const result = engine.execute();
+  
+  // Handle result
+  handleResult(result, gameState);
+  
+  // Stop on end
+  if (result.type === 'end') break;
+}
+```
+
+### Handling Choices
+
+```javascript
+const result = engine.execute();
+
+if (result.type === 'choice') {
+  // Display choices to player
+  for (const choice of result.choices) {
+    console.log(`${choice.index}. ${choice.text}`);
+  }
+  
+  // Wait for player input
+  const selectedIndex = await getPlayerChoice();
+  
+  // Select choice
+  engine.selectChoice(selectedIndex);
+  
+  // Execute choice actions
+  const choiceResult = engine.execute();
+}
+```
+
+### Using Parameters
+
+```javascript
+// Before executing a linked-list event, provide data
+engine.addParameterNext('Profession', 'ID', 1);
+engine.addParameterNext('Profession', 'Value', 10);
+
+const result = engine.execute();
+
+// Parameters are automatically cleared after execution
+```
+
+### Handling Events
+
+```javascript
+const result = engine.execute();
+
+if (result.type === 'event') {
+  switch (result.eventType) {
+    case 'adjust-variable':
+      gameState.adjustVariable(
+        result.eventData.variableName,
+        result.eventData.operation,
+        result.eventData.value
+      );
+      break;
+    
+    case 'add-state':
+      gameState.addState(
+        result.eventData.characterName,
+        result.eventData.stateName
+      );
+      break;
+    
+    case 'linked-list':
+      // Apply to all affected characters
+      for (const charName of result.eventData.affectedCharacters) {
+        gameState.modifyLinkedList(
+          charName,
+          result.eventData.linkedListName,
+          result.eventData.modifications
+        );
+      }
+      break;
+  }
+}
+```
+
+## Event Types
+
+### adjust-variable
+
+Modifies a global variable.
+
+**Result:**
+```javascript
+{
+  type: 'event',
+  eventType: 'adjust-variable',
+  eventData: {
+    variableName: 'Money',
+    variableType: 'float',
+    operation: 'increment', // 'increment', 'set', 'toggle'
+    value: 5.6
+  }
+}
+```
+
+### add-state / remove-state
+
+Adds or removes a state from a character.
+
+**Result:**
+```javascript
+{
+  type: 'event',
+  eventType: 'add-state', // or 'remove-state'
+  eventData: {
+    stateName: 'Poisoned',
+    characterName: 'Saniyah'
+  }
+}
+```
+
+### linked-list
+
+Modifies linked list data for characters.
+
+**Result:**
+```javascript
+{
+  type: 'event',
+  eventType: 'linked-list',
+  eventData: {
+    linkedListName: 'Profession',
+    scope: 'both',
+    modifications: [
+      {
+        field: 'Value',
+        operation: 'amount', // 'amount', 'set', 'append', 'replace', 'toggle'
+        value: 4
+      }
+    ],
+    affectedCharacters: ['Saniyah']
+  }
+}
+```
+
+**Linked List Scope:**
+- `character` - Only affects character-specific instances
+- `group` - Only affects group-level instances
+- `both` - Affects characters in the current group that have this linked list
+
+### progress-story
+
+Navigates to a specific chapter/group/node.
+
+**Result:**
+```javascript
+{
+  type: 'event',
+  eventType: 'progress-story',
+  eventData: {
+    chapterId: 2,
+    groupId: 2,
+    nodeId: 6
+  }
+}
+```
+
+### next-node
+
+Automatically navigates to the next node based on the group's node graph.
+
+**Result:**
+```javascript
+{
+  type: 'transition',
+  transitionType: 'node',
+  target: { nodeId: 2 }
+}
+```
+
+## Game State Management
+
+The engine doesn't manage game state - you do! Here's a recommended structure:
+
+```javascript
+class GameState {
+  constructor(storyData) {
+    // Global variables
+    this.variables = {};
+    
+    // Character data
+    this.characters = {};
+    
+    // Initialize from story data
+    for (const globalVar of storyData['global-vars']) {
+      this.variables[globalVar.name] = globalVar.default;
+    }
+    
+    for (const character of storyData.characters) {
+      this.characters[character.name] = {
+        states: [],
+        linkedLists: { /* copy from character definition */ }
+      };
+    }
+  }
+  
+  // Your methods to update state based on engine results
+  adjustVariable(name, operation, value) { /* ... */ }
+  addState(character, state) { /* ... */ }
+  modifyLinkedList(character, list, mods) { /* ... */ }
+}
+```
+
+## Best Practices
+
+### 1. Always Handle Results
+
+```javascript
+const result = engine.execute();
+
+// Don't ignore the result!
+handleResult(result, gameState);
+```
+
+### 2. Check for Choices
+
+```javascript
+if (engine.isAwaitingChoice()) {
+  // Must select a choice before continuing
+  engine.selectChoice(index);
+}
+```
+
+### 3. Use Parameters When Needed
+
+```javascript
+// Optional: peek at next item
+const next = engine.peekNext();
+
+if (next && needsParameters(next)) {
+  engine.addParameterNext('Context', 'Key', value);
+}
+
+engine.execute();
+```
+
+### 4. Graceful Error Handling
+
+```javascript
+try {
+  const result = engine.execute();
+  handleResult(result, gameState);
+} catch (error) {
+  console.error('Execution error:', error);
+  // Handle error gracefully
+}
+```
+
+### 5. Save/Load State
+
+```javascript
+// Save
+const saveData = {
+  engineState: engine.getState(),
+  gameState: gameState.serialize()
+};
+
+// Load
+engine.start(
+  saveData.engineState.chapter,
+  saveData.engineState.group,
+  saveData.engineState.node
+);
+gameState.deserialize(saveData.gameState);
+```
+
+## Advanced Topics
+
+### Custom Event Handlers
+
+```javascript
+class CustomEventHandler {
+  handle(result, gameState) {
+    if (result.type === 'event') {
+      // Custom logic for specific events
+      if (result.eventData.variableName === 'Money') {
+        this.updateUI(gameState.variables.Money);
+      }
+    }
+  }
+}
+```
+
+### Conditional Execution
+
+```javascript
+// Preview next item
+const next = engine.peekNext();
+
+if (next && shouldSkip(next)) {
+  engine.advance(); // Skip this item
+}
+
+const result = engine.execute();
+```
+
+### Batch Execution
+
+```javascript
+function executeUntilChoice() {
+  while (!engine.isAwaitingChoice()) {
+    const result = engine.execute();
+    handleResult(result, gameState);
+    
+    if (result.type === 'end') break;
+  }
+}
+```
+
+## Testing
+
+The engine includes comprehensive test files:
+
+- `sdc_engine_example.js` - Basic usage examples
+- `sdc_engine_test.js` - Tests with `__StoryStructure.sdc`
+
+Run tests:
+
+```bash
+node js/test/sdc_engine_test.js
+```
+
+## Troubleshooting
+
+### "No choice is currently awaiting selection"
+
+You called `selectChoice()` when no choice was active. Always check:
+
+```javascript
+if (engine.isAwaitingChoice()) {
+  engine.selectChoice(index);
+}
+```
+
+### Parameters Not Working
+
+Remember: parameters are cleared after each execution. Add them right before the execution that needs them.
+
+### Linked List Not Modified
+
+Check that:
+1. The linked list is defined in the story
+2. The character has the linked list in their data
+3. The current group includes the linked list in its `linked-lists` property
+
+### Navigation Issues
+
+Ensure:
+1. Node/group/chapter IDs are valid
+2. Node graph connections are defined in the group
+3. You're using the correct navigation method for the transition type
