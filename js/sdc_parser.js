@@ -150,7 +150,7 @@ class Lexer {
     
     this.keywords = {
       'states': TokenType.STATES,
-      'global_vars': TokenType.GLOBAL_VARS,
+      'global-vars': TokenType.GLOBAL_VARS,
       'linked-lists': TokenType.LINKED_LISTS,
       'characters': TokenType.CHARACTERS,
       'default': TokenType.DEFAULT,
@@ -194,7 +194,7 @@ class Lexer {
       'set': TokenType.SET,
       'append': TokenType.APPEND,
       'replace': TokenType.REPLACE,
-      'parentGroup': TokenType.PARENT_GROUP,
+      'parent-group': TokenType.PARENT_GROUP,
       'true': TokenType.TRUE,
       'false': TokenType.FALSE
     };
