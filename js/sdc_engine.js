@@ -382,7 +382,7 @@ class StoryEngine {
    */
   executeCodeAction(actionNumber, action) {
     return new ActionResult(actionNumber, 'code', {
-      code: action.data.code.code
+      code: action.data.code
     });
   }
 

@@ -273,9 +273,18 @@ class StoryRunner {
   
   handleAction(result) {
     console.log(`⚡ ACTION ${result.actionNumber} (${result.actionType})`);
-    
+  
     if (result.actionType === 'code') {
-      console.log(`   Code: ${result.data.code.substring(0, 50)}...`);
+        // Defensive check
+        if (result.data && result.data.code !== undefined && result.data.code !== null) {
+        const codePreview = result.data.code.length > 50 
+            ? result.data.code.substring(0, 50) + '...' 
+            : result.data.code;
+        console.log(`   Code: ${codePreview}`);
+        } else {
+        console.error(`   ⚠️  ERROR: Code is undefined or empty`);
+        console.error(`   result.data:`, JSON.stringify(result.data, null, 2));
+        }
     }
   }
   
@@ -361,331 +370,82 @@ class StoryRunner {
   }
 }
 
+function findUnclosedCodeBlocks(source) {
+  const codeBlockStarts = [];
+  let i = 0;
+  
+  while (i < source.length - 1) {
+    if (source[i] === '<' && source[i + 1] === '!') {
+      codeBlockStarts.push(i);
+      
+      // Try to find the closing !>
+      let j = i + 2;
+      let found = false;
+      while (j < source.length - 1) {
+        if (source[j] === '!' && source[j + 1] === '>') {
+          found = true;
+          break;
+        }
+        j++;
+      }
+      
+      if (!found) {
+        console.error(`⚠️  Unclosed code block at position ${i}`);
+        console.error(`   Context: "${source.substring(i, Math.min(i + 50, source.length))}"`);
+      }
+    }
+    i++;
+  }
+}
+
 // ============================================================================
 // EXAMPLE USAGE
 // ============================================================================
 
 async function runExample() {
-  // Parse story
+  console.log('\n═══════════════════════════════════════');
+  console.log('STORY ENGINE EXAMPLE');
+  console.log('═══════════════════════════════════════\n');
+  
+  // Read the actual __StoryStructure.sdc file
+  const fs = await import('fs/promises');
+  const path = await import('path');
+  
+  const sdcPath = path.join(process.cwd(), '__StoryStructure.sdc');
+  const sdcContent = await fs.readFile(sdcPath, 'utf-8');
+  
+  // Parse the file
   const parser = new SDCParser();
-  const storySource = `
-    # This is a comment
-states [
-    "Idle",
-    "Poisoned",
-    "SleepDeprived",
-    "Ghastly"
-]
-
-global-vars [
-    "PlayerName": {
-        type: "string"
-        default: ""
-    },
-    "Items": {
-        type: "int"
-        default: 0
-    },
-    "IsPlaying": {
-        type: "bool"
-        default: false
-    },
-    "Money": {
-        type: "float"
-        default: 30.0
-    }
-]
-
-linked-lists [
-	"Profession": {
-		scope: "both"
-		structure: {
-			ID: {
-				type: "integer"
-			}
-			Value: {
-				type: "integer"
-			}
-		}
-	}
-	"Stats": {
-		scope: "character"
-		structure: {
-			Strength: {
-				type: "integer"
-			}
-			Health: {
-				type: "integer"
-			}
-		}
-	}
-]
-
-characters [
-	"Saniyah": {
-		biography: ""
-		description: ""
-		linked-list-data: {
-			Stats: {
-				Strength: 8
-				Health: 125
-			}
-			Profession: [
-				"1": {
-					ID: 1
-					Value: 5
-				},
-				"2": {
-					ID: 5
-					Value: 12
-				}
-			]
-		}
-	}
-]
-
-tags [
-    "Location": {
-        type: "key-value"
-        color: "#0f6319ff"
-        keys: [
-            "Village",
-            "Village Outskirts",
-            "The Lake",
-            "Endless Waterfall",
-            "Cave of Mysteries",
-        ]
-    },
-    "Quest": {
-        type: "key-value"
-        color: "#e6f334ff"
-        keys: [
-            "Main Story",
-            "Side"
-        ]
-    },
-    "Discovery": {
-        type: "single"
-        color: "#713"
-    }
-]
-
-chapter 1 {
-    name: "Introduction"
-}
-
-chapter 2 {
-    name: "Into the Past"
-}
-
-group 1 {
-    chapter: 1
-    name: "My Story"
-    content: "Introduce the main character, present a challenging disruption in the bedroom."
-    tags: [
-        "Location": {
-            "Village": "Bedroom, 32, 55"
-        },
-        "Discovery"
-    ]
-    nodes: {
-        start: 1,
-        end: 3,
-        points: {
-            1: [ 2 ]
-            2: [ 3 ]
-        }
-    }
-	linked-lists: [
-		"Profession"
-	]
-}
-
-node 1 {
-    title: "Start"
-    content: "The start point"
-    timeline: {
-        action 1 {
-            type: "code"
-            <!
-                function message(info : string) {
-                    if (info == "OK") {
-                        return;
-                    }
-
-                    process(info);
-                }
-
-                message("CODE: 32");
-            !>
-        }
-        dialogue 1 {
-            Caroline : "What's happening?"
-        }
-        dialogue 2 {
-            Saniyah : "I don't know."
-        }
-        dialogue 3 {
-            Caroline : "Ahh!!"
-            Saniyah : "Ahh!!"
-        }
-        action 2 {
-            type: "code"
-            <!
-                enterCharacter("Johiah", [ 12, 6 ], [ 9, 6 ]);
-            !>
-        }
-        dialogue 4 {
-            Johiah : "What's going on?"
-        }
-        dialogue 5 {
-            Saniyah : "There's a sound coming from outside."
-        }
-        action 3 {
-            type: "choice"
-            choices: [
-                {
-                    text: "Calm down"
-                    choice: {
-                        action 3 {
-                            type: "event"
-                            goto: @node(2)
-                        }
-                    }
-                },
-                {
-                    text: "Let's leave"
-                    choice: {
-                        action 4 {
-                            type: "event"
-                            exit: "group"
-                        }
-                        action 5 {
-                            type: "event"
-                            enter: @group(2)
-                        }
-                    }
-                }
-            ]
-        }
-        action 4 {
-            type: "event"
-            data: {
-                type: "next-node"
-            }
-        }
-        action 5 {
-            type: "event"
-            data: {
-                type: "exit-current-node"
-            }
-        }
-        action 6 {
-            type: "event"
-            data: {
-                type: "exit-current-group"
-            }
-        }
-        action 7 {
-            type: "event"
-            data: {
-                type: "adjust-variable"
-                name: "Money"
-                increment: 5.6
-            }
-        }
-        action 8 {
-            type: "event"
-            data: {
-                type: "adjust-variable"
-                name: "Money"
-                increment: -5.6
-            }
-        }
-        action 9 {
-            type: "event"
-            data: {
-                type: "adjust-variable"
-                name: "PlayerName"
-                value: "New Player"
-            }
-        }
-        action 10 {
-            type: "event"
-            data: {
-                type: "adjust-variable"
-                name: "IsPlaying"
-                toggle: "toggle"
-            }
-        }
-        action 11 {
-            type: "event"
-            data: {
-                type: "add-state"
-                name: "Poisoned",
-                character: "Saniyah"
-            }
-        }
-        action 12 {
-            type: "event"
-            data: {
-                type: "remove-state"
-                name: "Poisoned",
-                character: "Saniyah"
-            }
-        }
-        action 13 {
-            type: "event"
-            data: {
-                type: "progress-story"
-                chapter: @chapter(2)
-                group: @group(2)
-                node: @node(6)
-            }
-        }
-		action 14 {
-			type: "event"
-			data: {
-				type: "linked-list"
-				reference: "Profession"
-				values: [
-					"Value": {
-						amount: 4
-					}
-				]
-			}
-		}
-		action 15 {
-			type: "event"
-			data: {
-				type: "linked-list"
-				reference: "Profession"
-				values: [
-					"Value": {
-						amount: -1
-					}
-				]
-			}
-		}
-    }
-}
-  `;
+  const storyData = parser.parse(sdcContent);
   
-  const storyData = parser.parse(storySource);
-  
+  // ✅ CHECK IF PARSING SUCCEEDED
   if (!storyData) {
-    console.error('Failed to parse story:', parser.getError());
+    console.error('❌ Failed to parse story file!');
+    console.error('Error:', parser.getLastError());
     return;
   }
   
-  console.log('\n[Debug] Parsed story data:');
+  console.log('[Debug] Parsed story data successfully:');
+  console.log('  Nodes:', storyData.nodes.length);
   console.log('  Characters:', storyData.characters.length);
-  if (storyData.characters.length > 0) {
-    console.log('  Character 0:', storyData.characters[0].name);
-    console.log('  Character 0 linked-list-data keys:', 
-      Object.keys(storyData.characters[0]['linked-list-data'] || {}));
+  
+  if (storyData.nodes.length > 0) {
+    const firstNode = storyData.nodes[0];
+    console.log('  Node 1 timeline items:', firstNode.timeline?.length || 0);
+    
+    // Debug first action
+    if (firstNode.timeline && firstNode.timeline.length > 0) {
+      const firstItem = firstNode.timeline[0];
+      console.log('  First timeline item type:', firstItem.type);
+      if (firstItem.type === TimelineItemType.ACTION) {
+        console.log('  First action type:', firstItem['action-type']);
+        console.log('  First action has code:', !!firstItem.data?.code);
+        if (firstItem.data?.code) {
+          console.log('  Code preview:', firstItem.data.code.substring(0, 50));
+        }
+      }
+    }
   }
-  console.log('');
   
   // Create game state
   const gameState = new GameState();
@@ -697,17 +457,12 @@ node 1 {
   // Start story
   runner.start(1, 1, 1);
   
-  // Execute story items
-  await runner.next(); // Dialogue
-  await runner.next(); // Money adjustment
-  await runner.next(); // Add Poisoned state
-  
-  // Add parameter before linked list modification
-  runner.addParameter('Profession', 'Value', 10); // Override amount from 4 to 10
-  await runner.next(); // Linked list modification
-  
-  // Display final state
-  gameState.displayState();
+  // Execute story items with error handling
+  try {
+    await runner.next();
+  } catch (error) {
+    console.error('Error executing story:', error);
+  }
 }
 
 // ============================================================================

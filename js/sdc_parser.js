@@ -265,10 +265,22 @@ class Lexer {
     const stringStart = this.current;
     
     while (this.peek() !== '"' && !this.isAtEnd()) {
-      if (this.peek() === '\n') {
+      const currentChar = this.peek();
+      
+      // Handle all line ending types
+      if (currentChar === '\r' && this.peekNext() === '\n') {
+        this.line++;
+        this.column = 0;
+        this.advance(); // \r
+        this.advance(); // \n
+        continue;
+      }
+      
+      if (currentChar === '\r' || currentChar === '\n') {
         this.line++;
         this.column = 0;
       }
+      
       this.advance();
     }
     
@@ -325,22 +337,46 @@ class Lexer {
   }
   
   scanCodeBlock() {
-     console.log('>>> scanCodeBlock CALLED <<<');
     this.advance(); // <
     this.advance(); // !
     
     const codeStart = this.current;
-    console.log('Code starts at position:', codeStart);
     
     while (!this.isAtEnd()) {
+      // Check for closing !>
       if (this.peek() === '!' && this.peekNext() === '>') {
-        console.log('Found end marker !> at position:', this.current);
         break;
       }
-      if (this.peek() === '\n') {
+      
+      // Handle line endings properly for all platforms
+      const currentChar = this.peek();
+      
+      // Windows: \r\n (check for \r followed by \n)
+      if (currentChar === '\r' && this.peekNext() === '\n') {
         this.line++;
         this.column = 0;
+        this.advance(); // Skip \r
+        this.advance(); // Skip \n
+        continue;
       }
+      
+      // Old Mac: \r alone
+      if (currentChar === '\r') {
+        this.line++;
+        this.column = 0;
+        this.advance();
+        continue;
+      }
+      
+      // Unix: \n alone
+      if (currentChar === '\n') {
+        this.line++;
+        this.column = 0;
+        this.advance();
+        continue;
+      }
+      
+      // Regular character
       this.advance();
     }
     
@@ -351,14 +387,11 @@ class Lexer {
     }
     
     const code = this.source.substring(codeStart, this.current);
-    console.log('Extracted code length:', code.length);
-    console.log('Code preview:', code.substring(0, 50));
     
     this.advance(); // !
     this.advance(); // >
     
     this.addToken(TokenType.CODE_BLOCK, code);
-    console.log('CODE_BLOCK token added');
   }
   
   scanTokens() {
@@ -383,12 +416,9 @@ class Lexer {
         case ')': this.addToken(TokenType.RPAREN); break;
         
         case '<':
-          console.log('Found < at position', this.current - 1);
           if (this.peek() === '!') {
-            console.log('Next char is !, calling scanCodeBlock');
             this.scanCodeBlock();
           } else {
-            console.log('Next char is NOT !, skipping');
             this.addToken(TokenType.ERROR);
           }
           break;
@@ -1094,40 +1124,29 @@ class Parser {
             if (typeToken.type === TokenType.STRING) {
               const next = this.advance();
 
-              console.log(`Next token: ${next.type}, ${next.value}`);
-              
               if (typeToken.value === 'code') {
                 action['action-type'] = ActionType.CODE;
-                
-                console.log('=== ENTERING CODE BLOCK SEARCH ===');
-                console.log('Current token:', this.peek().type, this.peek().lexeme?.substring(0, 20));
                 
                 while (braceDepth > 0 && !this.isAtEnd()) {
                   let tokenConsumed = false;
                   
                   const currentToken = this.peek();
-                  console.log(`  Checking token: ${currentToken.type} | braceDepth: ${braceDepth}`);
                   
                   if (this.check(TokenType.CODE_BLOCK)) {
-                    console.log('  ✓ Found CODE_BLOCK token!');
                     const codeToken = this.advance();
                     action.data.code = codeToken.value;
-                    console.log(`  Code captured: ${codeToken.value?.substring(0, 50)}...`);
                     tokenConsumed = true;
                   }
                   
                   if (this.check(TokenType.LBRACE)) {
-                    console.log('  Found LBRACE');
                     braceDepth++;
                     if (!tokenConsumed) {
                       this.advance();
                       tokenConsumed = true;
                     }
                   } else if (this.check(TokenType.RBRACE)) {
-                    console.log('  Found RBRACE');
                     braceDepth--;
                     if (braceDepth === 0) {
-                      console.log('  Breaking - braceDepth reached 0');
                       break;
                     }
                     if (!tokenConsumed) {
@@ -1138,13 +1157,10 @@ class Parser {
                   
                   // Only advance if we haven't consumed a token yet
                   if (!tokenConsumed) {
-                    console.log('  Advancing to skip token');
                     this.advance();
                   }
                 }
                 
-                console.log('=== EXITED CODE BLOCK SEARCH ===');
-                console.log('Final action.data.code:', action.data.code ? 'SET' : 'UNDEFINED');
                 break;
               } else if (typeToken.value === 'event') {
                 action['action-type'] = ActionType.EVENT;
@@ -1449,60 +1465,6 @@ class Parser {
         this.advance();
       }
     }
- console.log('>>> scanCodeBlock CALLED <<<');
-  this.advance(); // <
-  this.advance(); // !
-  
-  const codeStart = this.current;
-  console.log('Code starts at position:', codeStart);
-  
-  while (!this.isAtEnd()) {
-    if (this.peek() === '!' && this.peekNext() === '>') {
-      console.log('Found end marker !> at position:', this.current);
-      break;
-    }
-    if (this.peek() === '\n') {
-      this.line++;
-      this.column = 0;
-    }
-    this.advance();
-  }
-  
-  if (this.isAtEnd()) {
-    console.error('ERROR: Reached end without finding !>');
-    this.addToken(TokenType.ERROR);
-    return;
-  }
-  
-  const code = this.source.substring(codeStart, this.current);
-  console.log('Extracted code length:', code.length);
-  console.log('Code preview:', code.substring(0, 50));
-  
-  this.advance(); // !
-  this.advance(); // >
-  
-  this.addToken(TokenType.CODE_BLOCK, code);
-  console.log('CODE_BLOCK token added');
-    // DEBUG: Check if CODE_BLOCK tokens exist
-    console.log('=== TOKEN SCAN COMPLETE ===');
-    const codeBlocks = this.tokens.filter(t => t.type === TokenType.CODE_BLOCK);
-    console.log(`Found ${codeBlocks.length} CODE_BLOCK tokens`);
-    if (codeBlocks.length > 0) {
-      console.log('First CODE_BLOCK preview:', codeBlocks[0].value?.substring(0, 50));
-    }
-    
-    // Also check for the pattern: TYPE -> COLON -> STRING "code" -> ???
-    for (let i = 0; i < this.tokens.length; i++) {
-      if (this.tokens[i].type === TokenType.TYPE) {
-        console.log(`\nFound TYPE at index ${i}:`);
-        console.log(`  [${i}] TYPE`);
-        console.log(`  [${i+1}] ${this.tokens[i+1]?.type}`);
-        console.log(`  [${i+2}] ${this.tokens[i+2]?.type} = "${this.tokens[i+2]?.value}"`);
-        console.log(`  [${i+3}] ${this.tokens[i+3]?.type} ${this.tokens[i+3]?.value?.substring(0, 30) || ''}`);
-        console.log(`  [${i+4}] ${this.tokens[i+4]?.type}`);
-      }
-    }
-    console.log('=== END TOKEN DEBUG ===\n');
     
     return storyData;
   }
@@ -1532,24 +1494,32 @@ class SDCParser {
       // Check for lexer errors
       for (const token of tokens) {
         if (token.type === TokenType.ERROR) {
-          this.lastError = 'Lexer error: invalid token';
-          return null;
+          const errorMsg = `Tokenization error at line ${token.line}, column ${token.column}`;
+          console.error(errorMsg);
+          this.lastError = errorMsg;
+          return null;  // Return null on lexer error
         }
       }
       
       const parser = new Parser(tokens);
-      const result = parser.parse();
+      const storyData = parser.parse();
       
       if (parser.errorMessage) {
+        console.error('Parse error:', parser.errorMessage);
         this.lastError = parser.errorMessage;
-        return null;
+        return null;  // Return null on parser error
       }
       
-      return result;
+      return storyData;
     } catch (error) {
-      this.lastError = `Parse error: ${error.message}`;
+      console.error('Unexpected error during parsing:', error);
+      this.lastError = error.message;
       return null;
     }
+  }
+  
+  getLastError() {
+    return this.lastError;
   }
   
   /**
